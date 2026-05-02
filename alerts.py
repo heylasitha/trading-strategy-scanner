@@ -105,13 +105,70 @@ def _format_message(signal: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_golden_cross(signal: dict) -> str:
+    sym      = signal["symbol"]
+    tf       = signal["timeframe"]
+    strength = signal["strength"]
+
+    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+
+    now_utc = datetime.now(timezone.utc)
+    now_sgt = now_utc.astimezone(SGT)
+    now_et  = now_utc.astimezone(ET)
+    time_str = (
+        f"{now_sgt.strftime('%Y-%m-%d %H:%M')} SGT  |  "
+        f"{now_et.strftime('%H:%M')} ET"
+    )
+
+    entry  = _format_price(signal["entry"],  sym)
+    stop   = _format_price(signal["stop"],   sym)
+    target = _format_price(signal["target"], sym)
+    sma20  = _format_price(signal["sma20"],  sym)
+    sma200 = _format_price(signal["sma200"], sym)
+    close  = _format_price(signal["close"],  sym)
+
+    lines = [
+        f"{emoji} ✨ GOLDEN CROSS DETECTED",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Asset     : {sym}",
+        f"Timeframe : {tf.upper()}",
+        f"Signal    : SMA 20 crossed ABOVE SMA 200",
+        f"Strength  : {strength}",
+        f"",
+        f"📊 SMA Cross:",
+        f"  SMA 20  : {sma20}  ✅ Now above",
+        f"  SMA 200 : {sma200}",
+        f"  Price   : {close}  ✅ Above both",
+        f"",
+        f"💪 Trend Strength",
+        f"  ADX     : {signal['adx']:.1f}  ✅ Trending",
+        f"",
+        f"📦 Volume",
+        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"",
+        f"🎯 Trade Levels",
+        f"  Entry   : {entry}",
+        f"  Stop    : {stop}  (-{signal['stop_pct']}%)",
+        f"  Target  : {target}  (+{signal['target_pct']}%)",
+        f"  R:R     : {signal['rr']} : 1",
+        f"",
+        f"⏰ {time_str}",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"⚠️  New trend beginning — confirm on candle close",
+    ]
+    return "\n".join(lines)
+
+
 def send_telegram_alert(signal: dict) -> bool:
     """Format and send a Telegram message. Returns True on success."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         log.error("Telegram credentials missing — check .env file")
         return False
 
-    message = _format_message(signal)
+    if signal.get("strategy") == "GOLDEN CROSS":
+        message = _format_golden_cross(signal)
+    else:
+        message = _format_message(signal)
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id":    TELEGRAM_CHAT_ID,

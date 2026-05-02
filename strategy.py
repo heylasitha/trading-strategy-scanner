@@ -8,6 +8,94 @@ from config import (
 from indicators import add_all_indicators
 
 
+# ── Strategy 2: Golden Cross ──────────────────────────────────────────────────
+
+def detect_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    Golden Cross: SMA 20 crosses ABOVE SMA 200.
+
+    Conditions:
+      1. Previous bar: SMA20 <= SMA200  (was below or equal)
+      2. Current bar:  SMA20 >  SMA200  (now above = the cross)
+      3. Price above both SMAs           (strength confirmation)
+      4. Volume > 1.5x average           (real move, not fake)
+      5. ADX > 25                        (trending market, not sideways)
+    """
+    df = add_all_indicators(df)
+    df.dropna(subset=["sma20", "sma200", "adx", "volume_ratio"], inplace=True)
+
+    if len(df) < 5:
+        return None
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    # Condition 1 + 2: The cross happened on this bar
+    cross_happened = (prev["sma20"] <= prev["sma200"]) and (last["sma20"] > last["sma200"])
+    if not cross_happened:
+        # Also check if cross happened within last 3 bars (still fresh)
+        fresh_cross = False
+        for i in range(-3, 0):
+            bar      = df.iloc[i]
+            bar_prev = df.iloc[i - 1]
+            if (bar_prev["sma20"] <= bar_prev["sma200"]) and (bar["sma20"] > bar["sma200"]):
+                fresh_cross = True
+                break
+        if not fresh_cross:
+            return None
+
+    # Condition 3: Price above both SMAs
+    if last["close"] <= last["sma20"] or last["close"] <= last["sma200"]:
+        return None
+
+    # Condition 4: Volume confirmation
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+        return None
+
+    # Condition 5: ADX — trending market only
+    if pd.isna(last["adx"]) or last["adx"] < ADX_THRESHOLD:
+        return None
+
+    # Calculate levels
+    entry     = last["close"]
+    stop      = last["sma200"] * 0.98   # Stop below SMA200
+    risk      = entry - stop
+    if risk <= 0:
+        return None
+
+    target     = entry + risk * MIN_RR
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((target - entry) / entry * 100, 2)
+    rr         = round((target - entry) / risk, 2)
+
+    # Strength based on ADX and volume
+    if last["adx"] > 35 and last["volume_ratio"] > 2.0:
+        strength = "STRONG"
+    elif last["adx"] > 28:
+        strength = "MODERATE"
+    else:
+        strength = "WATCH"
+
+    return {
+        "symbol":        symbol,
+        "timeframe":     tf_label,
+        "strategy":      "GOLDEN CROSS",
+        "strength":      strength,
+        "pattern":       "SMA20 crossed above SMA200",
+        "entry":         round(entry,  6),
+        "stop":          round(stop,   6),
+        "target":        round(target, 6),
+        "rr":            rr,
+        "stop_pct":      stop_pct,
+        "target_pct":    target_pct,
+        "sma20":         round(last["sma20"],        4),
+        "sma200":        round(last["sma200"],        4),
+        "adx":           round(last["adx"],           2),
+        "volume_ratio":  round(last["volume_ratio"],  2),
+        "close":         round(last["close"],         4),
+    }
+
+
 # ── Pattern classifier ────────────────────────────────────────────────────────
 
 def _classify_pattern(df: pd.DataFrame) -> str:

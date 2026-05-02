@@ -15,7 +15,7 @@ import pytz
 
 from config import MAG7, EXTRA_STOCKS, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
-from strategy import detect_signal
+from strategy import detect_signal, detect_golden_cross
 from alerts import send_telegram_alert, send_startup_message
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -50,14 +50,15 @@ def _state_key(symbol: str, tf: str) -> str:
 
 
 def already_alerted(state: dict, symbol: str, tf: str) -> bool:
-    key   = _state_key(symbol, tf)
+    key   = symbol if tf == "" else _state_key(symbol, tf)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return state.get(key) == today
 
 
 def mark_alerted(state: dict, symbol: str, tf: str) -> None:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    state[_state_key(symbol, tf)] = today
+    key   = symbol if tf == "" else _state_key(symbol, tf)
+    state[key] = today
 
 
 # ── Market hours ──────────────────────────────────────────────────────────────
@@ -114,24 +115,27 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
         if df is None:
             continue
 
-        if already_alerted(state, symbol, tf_label):
-            log.info(f"  {symbol} {tf_label}: already alerted today")
-            continue
+        # ── Strategy 1: SMA Momentum ─────────────────────────────────────
+        s1_key = f"s1_{symbol}_{tf_label}"
+        if not already_alerted(state, s1_key, ""):
+            signal = detect_signal(df, symbol, tf_label)
+            if signal:
+                log.info(f"  S1 SIGNAL: {symbol} {tf_label} | {signal['strength']} | {signal['pattern']}")
+                if send_telegram_alert(signal):
+                    mark_alerted(state, s1_key, "")
+                    alerts_sent += 1
+            else:
+                log.info(f"  {symbol} {tf_label}: no S1 signal")
 
-        signal = detect_signal(df, symbol, tf_label)
-        if signal is None:
-            log.info(f"  {symbol} {tf_label}: no signal")
-            continue
-
-        log.info(
-            f"  SIGNAL: {symbol} {tf_label} | "
-            f"{signal['strength']} | {signal['pattern']} | R:R {signal['rr']}"
-        )
-
-        sent = send_telegram_alert(signal)
-        if sent:
-            mark_alerted(state, symbol, tf_label)
-            alerts_sent += 1
+        # ── Strategy 2: Golden Cross ──────────────────────────────────────
+        s2_key = f"s2_{symbol}_{tf_label}"
+        if not already_alerted(state, s2_key, ""):
+            gc_signal = detect_golden_cross(df, symbol, tf_label)
+            if gc_signal:
+                log.info(f"  GOLDEN CROSS: {symbol} {tf_label} | {gc_signal['strength']}")
+                if send_telegram_alert(gc_signal):
+                    mark_alerted(state, s2_key, "")
+                    alerts_sent += 1
 
     return alerts_sent
 
