@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytz
 
-from config import MAG7, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
+from config import MAG7, EXTRA_STOCKS, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
 from strategy import detect_signal
 from alerts import send_telegram_alert, send_startup_message
@@ -153,7 +153,7 @@ def main() -> None:
 
     total_alerts = 0
 
-    for symbol in MAG7:
+    for symbol in MAG7 + EXTRA_STOCKS:
         try:
             total_alerts += scan_symbol(symbol, is_stock=True, state=state)
         except Exception as e:

@@ -9,13 +9,15 @@ TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
 # ── Assets ────────────────────────────────────────────────────────────────────
 MAG7 = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"]
+EXTRA_STOCKS = ["VOO", "QQQM", "TSM", "AMD"]
 CRYPTO = ["BTC-USD", "ETH-USD", "LTC-USD"]
-ALL_SYMBOLS = MAG7 + CRYPTO
+ALL_SYMBOLS = MAG7 + EXTRA_STOCKS + CRYPTO
 
 # ── Timeframes ────────────────────────────────────────────────────────────────
 # Each entry: (label, yfinance_interval, yfinance_period, resample_rule_or_None)
 TIMEFRAMES = [
     ("15m", "15m",  "60d",   None),
+    ("30m", "30m",  "60d",   None),
     ("1h",  "1h",   "730d",  None),
     ("2h",  "1h",   "730d",  "2h"),
     ("4h",  "1h",   "730d",  "4h"),
