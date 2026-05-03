@@ -92,7 +92,7 @@ def _fetch_alpaca(symbol: str, tf_label: str) -> pd.DataFrame | None:
             bars = data.get("bars") or []
 
         if not bars:
-            log.debug(f"Alpaca {symbol} {tf_label}: no bars returned")
+            log.info(f"Alpaca {symbol} {tf_label}: no bars returned")
             return None
 
         return _parse_bars(bars)
@@ -108,9 +108,10 @@ def fetch_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame | None:
     if df is None or df.empty:
         return None
     if len(df) < MIN_BARS:
-        log.debug(f"{symbol} {tf_label}: only {len(df)} bars (need {MIN_BARS})")
+        log.info(f"{symbol} {tf_label}: only {len(df)} bars (need {MIN_BARS}) — skipping")
         return None
 
+    log.info(f"{symbol} {tf_label}: {len(df)} bars fetched ✓")
     return df
 
 
@@ -120,6 +121,5 @@ def fetch_all_timeframes(symbol: str) -> dict[str, pd.DataFrame]:
         df = fetch_ohlcv(symbol, tf_label)
         if df is not None:
             results[tf_label] = df
-            log.debug(f"  {symbol} {tf_label}: {len(df)} bars")
         time.sleep(0.2)
     return results
