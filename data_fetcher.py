@@ -1,103 +1,154 @@
 from __future__ import annotations
 
-import time
 import logging
-import yfinance as yf
-import pandas as pd
+import time
 
-from config import TIMEFRAMES, MIN_BARS
+import pandas as pd
+import requests
+
+from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, CRYPTO, TIMEFRAMES, MIN_BARS
 
 log = logging.getLogger(__name__)
 
-# How long to wait between yfinance requests (avoids rate limiting)
-REQUEST_DELAY = 1.0
+ALPACA_DATA_URL = "https://data.alpaca.markets/v2/stocks"
+BINANCE_URL     = "https://api.binance.com/api/v3/klines"
+
+# Alpaca supports native 2Hour and 4Hour bars — no resampling needed
+ALPACA_TF_MAP = {
+    "15m": "15Min",
+    "30m": "30Min",
+    "1h":  "1Hour",
+    "2h":  "2Hour",
+    "4h":  "4Hour",
+    "1d":  "1Day",
+    "1w":  "1Week",
+}
+
+BINANCE_SYMBOL_MAP = {
+    "BTC-USD": "BTCUSDT",
+    "ETH-USD": "ETHUSDT",
+    "LTC-USD": "LTCUSDT",
+}
+
+BINANCE_TF_MAP = {
+    "15m": "15m",
+    "30m": "30m",
+    "1h":  "1h",
+    "2h":  "2h",
+    "4h":  "4h",
+    "1d":  "1d",
+    "1w":  "1w",
+}
 
 
-def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
-    df = df.resample(rule).agg({
-        "open":   "first",
-        "high":   "max",
-        "low":    "min",
-        "close":  "last",
-        "volume": "sum",
-    }).dropna()
-    return df
+def _alpaca_headers() -> dict:
+    return {
+        "APCA-API-KEY-ID":     ALPACA_API_KEY    or "",
+        "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY or "",
+    }
 
 
-def fetch_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame | None:
-    """
-    Fetch OHLCV data for a symbol on a given timeframe label (e.g. '15m', '1h').
-    Returns a DataFrame with lowercase columns: open, high, low, close, volume.
-    Returns None if data is unavailable or insufficient.
-    """
-    # Find the timeframe config
-    tf_config = next((t for t in TIMEFRAMES if t[0] == tf_label), None)
-    if tf_config is None:
-        log.warning(f"Unknown timeframe label: {tf_label}")
+def _fetch_alpaca(symbol: str, tf_label: str) -> pd.DataFrame | None:
+    alpaca_tf = ALPACA_TF_MAP.get(tf_label)
+    if not alpaca_tf:
         return None
 
-    label, interval, period, resample_rule = tf_config
+    params = {
+        "timeframe":  alpaca_tf,
+        "limit":      1000,
+        "adjustment": "split",
+        "feed":       "iex",
+        "sort":       "asc",
+    }
 
     try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period, interval=interval, auto_adjust=True)
-
-        if df is None or df.empty:
-            log.debug(f"{symbol} {label}: no data returned")
+        resp = requests.get(
+            f"{ALPACA_DATA_URL}/{symbol}/bars",
+            headers=_alpaca_headers(),
+            params=params,
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.error(f"Alpaca {symbol} {tf_label}: {resp.status_code} {resp.text[:200]}")
             return None
 
-        # Standardise column names
-        df.columns = [c.lower() for c in df.columns]
-        df = df[["open", "high", "low", "close", "volume"]].copy()
+        bars = resp.json().get("bars") or []
+        if not bars:
+            log.debug(f"Alpaca {symbol} {tf_label}: no bars returned")
+            return None
 
-        # Normalise index to UTC-naive datetime
-        if df.index.tz is not None:
-            df.index = df.index.tz_convert("UTC").tz_localize(None)
-        df.index = pd.to_datetime(df.index)
+        df = pd.DataFrame(bars)
+        df = df.rename(columns={"t": "datetime", "o": "open", "h": "high",
+                                 "l": "low",      "c": "close", "v": "volume"})
+        df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+        df = df.set_index("datetime")
+        df = df[["open", "high", "low", "close", "volume"]].astype(float)
         df.sort_index(inplace=True)
-        df.dropna(inplace=True)
-
-        # Resample if needed (2h / 4h)
-        if resample_rule:
-            df = _resample_ohlcv(df, resample_rule)
-
-        if len(df) < MIN_BARS:
-            log.debug(f"{symbol} {label}: only {len(df)} bars (need {MIN_BARS})")
-            return None
-
-        time.sleep(REQUEST_DELAY)
         return df
 
     except Exception as e:
-        log.warning(f"fetch_ohlcv failed for {symbol} {label}: {e}")
+        log.error(f"Alpaca fetch failed {symbol} {tf_label}: {e}")
         return None
 
 
+def _fetch_binance(symbol: str, tf_label: str) -> pd.DataFrame | None:
+    binance_symbol = BINANCE_SYMBOL_MAP.get(symbol)
+    binance_tf     = BINANCE_TF_MAP.get(tf_label)
+    if not binance_symbol or not binance_tf:
+        return None
+
+    params = {
+        "symbol":   binance_symbol,
+        "interval": binance_tf,
+        "limit":    1000,
+    }
+
+    try:
+        resp = requests.get(BINANCE_URL, params=params, timeout=15)
+        if resp.status_code != 200:
+            log.error(f"Binance {symbol} {tf_label}: {resp.status_code}")
+            return None
+
+        raw = resp.json()
+        if not raw:
+            return None
+
+        df = pd.DataFrame(raw, columns=[
+            "open_time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_volume", "trades",
+            "taker_buy_base", "taker_buy_quote", "ignore",
+        ])
+        df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+        df = df.set_index("open_time")
+        df = df[["open", "high", "low", "close", "volume"]].astype(float)
+        df.sort_index(inplace=True)
+        # Drop the last bar — it's still forming
+        df = df.iloc[:-1]
+        return df
+
+    except Exception as e:
+        log.error(f"Binance fetch failed {symbol} {tf_label}: {e}")
+        return None
+
+
+def fetch_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame | None:
+    df = _fetch_binance(symbol, tf_label) if symbol in CRYPTO else _fetch_alpaca(symbol, tf_label)
+
+    if df is None or df.empty:
+        return None
+    if len(df) < MIN_BARS:
+        log.debug(f"{symbol} {tf_label}: only {len(df)} bars (need {MIN_BARS})")
+        return None
+
+    return df
+
+
 def fetch_all_timeframes(symbol: str) -> dict[str, pd.DataFrame]:
-    """
-    Fetch OHLCV for all configured timeframes for a symbol.
-    Returns a dict of {tf_label: DataFrame}.
-    Skips timeframes where data is unavailable.
-    """
     results: dict[str, pd.DataFrame] = {}
-
-    # Optimisation: fetch 1h data once and reuse for 2h and 4h
-    h1_df: pd.DataFrame | None = None
-
-    for label, interval, period, resample_rule in TIMEFRAMES:
-        if resample_rule and interval == "1h":
-            # Reuse cached 1h data
-            if h1_df is None:
-                h1_df = fetch_ohlcv(symbol, "1h")
-            if h1_df is not None:
-                resampled = _resample_ohlcv(h1_df, resample_rule)
-                if len(resampled) >= MIN_BARS:
-                    results[label] = resampled
-        else:
-            df = fetch_ohlcv(symbol, label)
-            if df is not None:
-                results[label] = df
-                if label == "1h":
-                    h1_df = df  # Cache for 2h/4h resampling
-
+    for tf_label, _, _, _ in TIMEFRAMES:
+        df = fetch_ohlcv(symbol, tf_label)
+        if df is not None:
+            results[tf_label] = df
+            log.debug(f"  {symbol} {tf_label}: {len(df)} bars")
+        time.sleep(0.2)
     return results

@@ -7,6 +7,10 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
+# ── Alpaca ────────────────────────────────────────────────────────────────────
+ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY")
+ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+
 # ── Assets ────────────────────────────────────────────────────────────────────
 MAG7 = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"]
 EXTRA_STOCKS = ["VOO", "QQQM", "TSM", "AMD"]

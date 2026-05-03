@@ -75,23 +75,7 @@ def is_stock_market_open() -> bool:
 # ── Earnings blackout ─────────────────────────────────────────────────────────
 
 def near_earnings(symbol: str) -> bool:
-    if symbol not in MAG7:
-        return False
-    try:
-        import yfinance as yf
-        cal = yf.Ticker(symbol).calendar
-        if cal is None or cal.empty:
-            return False
-        if "Earnings Date" in cal.index:
-            earnings_date = cal.loc["Earnings Date"].iloc[0]
-            if hasattr(earnings_date, "date"):
-                earnings_date = earnings_date.date()
-            days_away = (earnings_date - datetime.now(timezone.utc).date()).days
-            if abs(days_away) <= EARNINGS_BUFFER_DAYS:
-                log.info(f"{symbol}: earnings in {days_away} days — skipping")
-                return True
-    except Exception:
-        pass
+    """Earnings blackout check — disabled (yfinance removed). Always returns False."""
     return False
 
 
