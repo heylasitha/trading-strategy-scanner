@@ -17,6 +17,7 @@ from config import MAG7, EXTRA_STOCKS, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
 from strategy import detect_signal, detect_golden_cross, detect_vwap_bounce
 from alerts import send_telegram_alert, send_startup_message
+from sheets_logger import log_signal
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -106,6 +107,7 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
             if signal:
                 log.info(f"  S1 SIGNAL: {symbol} {tf_label} | {signal['strength']} | {signal['pattern']}")
                 if send_telegram_alert(signal):
+                    log_signal(signal)
                     mark_alerted(state, s1_key, "")
                     alerts_sent += 1
             else:
@@ -118,6 +120,7 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
             if gc_signal:
                 log.info(f"  GOLDEN CROSS: {symbol} {tf_label} | {gc_signal['strength']}")
                 if send_telegram_alert(gc_signal):
+                    log_signal(gc_signal)
                     mark_alerted(state, s2_key, "")
                     alerts_sent += 1
 
@@ -128,6 +131,7 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
             if vwap_signal:
                 log.info(f"  VWAP BOUNCE: {symbol} {tf_label} | {vwap_signal['strength']}")
                 if send_telegram_alert(vwap_signal):
+                    log_signal(vwap_signal)
                     mark_alerted(state, s3_key, "")
                     alerts_sent += 1
 
