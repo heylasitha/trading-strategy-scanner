@@ -304,7 +304,7 @@ MAX_VWAP_TOUCHES = 2
 def _count_vwap_touches(df: pd.DataFrame, tolerance: float = VWAP_TOUCH_TOLERANCE) -> int:
     """Count how many times price has touched VWAP today."""
     today = df.index[-1].date()
-    today_df = df[df.index.normalize() == pd.Timestamp(today)]
+    today_df = df[df.index.date == today]  # date comparison — works with any tz
     touches = 0
     for _, row in today_df.iterrows():
         if abs(row["low"] - row["vwap"]) / row["vwap"] <= tolerance:

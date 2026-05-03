@@ -18,15 +18,14 @@ CRYPTO = ["BTC-USD", "ETH-USD", "LTC-USD"]
 ALL_SYMBOLS = MAG7 + EXTRA_STOCKS + CRYPTO
 
 # ── Timeframes ────────────────────────────────────────────────────────────────
-# Each entry: (label, yfinance_interval, yfinance_period, resample_rule_or_None)
 TIMEFRAMES = [
-    ("15m", "15m",  "60d",   None),
-    ("30m", "30m",  "60d",   None),
-    ("1h",  "1h",   "730d",  None),
-    ("2h",  "1h",   "730d",  "2h"),
-    ("4h",  "1h",   "730d",  "4h"),
-    ("1d",  "1d",   "5y",    None),
-    ("1w",  "1wk",  "max",   None),
+    ("15m", None, None, None),
+    ("30m", None, None, None),
+    ("1h",  None, None, None),
+    ("2h",  None, None, None),
+    ("4h",  None, None, None),
+    ("1d",  None, None, None),
+    ("1w",  None, None, None),
 ]
 
 # ── Indicator Settings ────────────────────────────────────────────────────────

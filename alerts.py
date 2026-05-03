@@ -86,7 +86,7 @@ def _format_message(signal: dict) -> str:
         f"  K > D   : ✅ Rising",
         f"",
         f"💪 Trend Strength",
-        f"  ADX     : {signal['adx']:.1f}  ✅ (>{25})",
+        f"  ADX     : {signal['adx']:.1f}  ✅ (>{signal.get('adx_threshold', 25)})",
         f"",
         f"📦 Volume",
         f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
