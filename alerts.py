@@ -159,6 +159,60 @@ def _format_golden_cross(signal: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_vwap_bounce(signal: dict) -> str:
+    sym      = signal["symbol"]
+    tf       = signal["timeframe"]
+    strength = signal["strength"]
+    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+
+    now_utc  = datetime.now(timezone.utc)
+    now_sgt  = now_utc.astimezone(SGT)
+    now_et   = now_utc.astimezone(ET)
+    time_str = (
+        f"{now_sgt.strftime('%Y-%m-%d %H:%M')} SGT  |  "
+        f"{now_et.strftime('%H:%M')} ET"
+    )
+
+    entry      = _format_price(signal["entry"],      sym)
+    stop       = _format_price(signal["stop"],       sym)
+    target     = _format_price(signal["target"],     sym)
+    vwap       = _format_price(signal["vwap"],       sym)
+    vwap_upper = _format_price(signal["vwap_upper"], sym)
+    vwap_lower = _format_price(signal["vwap_lower"], sym)
+
+    lines = [
+        f"{emoji} 💧 VWAP BOUNCE DETECTED",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Asset     : {sym}",
+        f"Timeframe : {tf.upper()}",
+        f"Pattern   : {signal['pattern']}",
+        f"Strength  : {strength}",
+        f"",
+        f"📊 VWAP Bands:",
+        f"  Upper (+1SD) : {vwap_upper}  🎯 Target",
+        f"  VWAP Middle  : {vwap}   ← Bounce here",
+        f"  Lower (-1SD) : {vwap_lower}  🛑 Stop zone",
+        f"",
+        f"📉 SMA Trend Confirmation:",
+        f"  SMA 20  : {_format_price(signal['sma20'],  sym)}  ✅",
+        f"  SMA 200 : {_format_price(signal['sma200'], sym)}  ✅",
+        f"",
+        f"📦 Volume",
+        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"",
+        f"🎯 Trade Levels",
+        f"  Entry   : {entry}",
+        f"  Stop    : {stop}  (-{signal['stop_pct']}%)",
+        f"  Target  : {target}  (+{signal['target_pct']}%)",
+        f"  R:R     : {signal['rr']} : 1",
+        f"",
+        f"⏰ {time_str}",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"⚠️  Price bounced off VWAP — ride to upper band",
+    ]
+    return "\n".join(lines)
+
+
 def send_telegram_alert(signal: dict) -> bool:
     """Format and send a Telegram message. Returns True on success."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -167,6 +221,8 @@ def send_telegram_alert(signal: dict) -> bool:
 
     if signal.get("strategy") == "GOLDEN CROSS":
         message = _format_golden_cross(signal)
+    elif signal.get("strategy") == "VWAP BOUNCE":
+        message = _format_vwap_bounce(signal)
     else:
         message = _format_message(signal)
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"

@@ -15,7 +15,7 @@ import pytz
 
 from config import MAG7, EXTRA_STOCKS, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
-from strategy import detect_signal, detect_golden_cross
+from strategy import detect_signal, detect_golden_cross, detect_vwap_bounce
 from alerts import send_telegram_alert, send_startup_message
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -135,6 +135,16 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                 log.info(f"  GOLDEN CROSS: {symbol} {tf_label} | {gc_signal['strength']}")
                 if send_telegram_alert(gc_signal):
                     mark_alerted(state, s2_key, "")
+                    alerts_sent += 1
+
+        # ── Strategy 3: VWAP Bounce ───────────────────────────────────────
+        s3_key = f"s3_{symbol}_{tf_label}"
+        if not already_alerted(state, s3_key, ""):
+            vwap_signal = detect_vwap_bounce(df, symbol, tf_label, mag7=MAG7)
+            if vwap_signal:
+                log.info(f"  VWAP BOUNCE: {symbol} {tf_label} | {vwap_signal['strength']}")
+                if send_telegram_alert(vwap_signal):
+                    mark_alerted(state, s3_key, "")
                     alerts_sent += 1
 
     return alerts_sent

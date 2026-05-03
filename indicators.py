@@ -76,10 +76,48 @@ def add_volume_ratio(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_vwap(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    VWAP with +1/-1 Standard Deviation bands.
+    Resets each day — groups by date for correct daily calculation.
+    """
+    typical_price = (df["high"] + df["low"] + df["close"]) / 3
+    tp_vol = typical_price * df["volume"]
+
+    # Group by date for daily reset
+    dates = df.index.normalize()
+    cum_tp_vol = tp_vol.groupby(dates).cumsum()
+    cum_vol    = df["volume"].groupby(dates).cumsum()
+
+    vwap = cum_tp_vol / cum_vol.replace(0, np.nan)
+
+    # Standard deviation bands
+    squared_diff = (typical_price - vwap) ** 2
+    cum_sq = (squared_diff * df["volume"]).groupby(dates).cumsum()
+    variance = cum_sq / cum_vol.replace(0, np.nan)
+    std_dev  = np.sqrt(variance)
+
+    df["vwap"]       = vwap
+    df["vwap_upper"] = vwap + std_dev        # +1 SD
+    df["vwap_lower"] = vwap - std_dev        # -1 SD
+
+    return df
+
+
 def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df = add_sma(df)
     df = add_stochastic(df)
     df = add_adx(df)
     df = add_volume_ratio(df)
+    return df
+
+
+def add_all_indicators_with_vwap(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df = add_sma(df)
+    df = add_stochastic(df)
+    df = add_adx(df)
+    df = add_volume_ratio(df)
+    df = add_vwap(df)
     return df

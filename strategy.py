@@ -5,7 +5,7 @@ import pandas as pd
 from config import (
     ADX_THRESHOLD, VOLUME_MULTIPLIER, MIN_RR,
 )
-from indicators import add_all_indicators
+from indicators import add_all_indicators, add_all_indicators_with_vwap
 
 
 # ── Strategy 2: Golden Cross ──────────────────────────────────────────────────
@@ -284,4 +284,158 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
         "adx":          round(last["adx"],         2),
         "volume_ratio": round(last["volume_ratio"],2),
         "close":        round(last["close"],       4),
+    }
+
+
+# ── Strategy 3: VWAP Bounce ───────────────────────────────────────────────────
+
+# Intraday timeframes only — VWAP resets daily
+VWAP_TIMEFRAMES = {"15m", "30m", "1h"}
+
+# How close price must be to VWAP to count as a touch (0.5%)
+VWAP_TOUCH_TOLERANCE = 0.005
+
+# Max number of VWAP touches allowed in session (3rd+ touch = weaker)
+MAX_VWAP_TOUCHES = 2
+
+
+def _count_vwap_touches(df: pd.DataFrame, tolerance: float = VWAP_TOUCH_TOLERANCE) -> int:
+    """Count how many times price has touched VWAP today."""
+    today = df.index[-1].date()
+    today_df = df[df.index.normalize() == pd.Timestamp(today)]
+    touches = 0
+    for _, row in today_df.iterrows():
+        if abs(row["low"] - row["vwap"]) / row["vwap"] <= tolerance:
+            touches += 1
+    return touches
+
+
+def _is_stock_lunch_hour(tf_label: str, symbol: str, mag7: list) -> bool:
+    """Return True if current ET time is in choppy lunch zone (11AM-1PM)."""
+    if symbol not in mag7:
+        return False
+    try:
+        import pytz
+        from datetime import datetime, timezone
+        et  = pytz.timezone("US/Eastern")
+        now = datetime.now(timezone.utc).astimezone(et)
+        return 11 <= now.hour < 13
+    except Exception:
+        return False
+
+
+def detect_vwap_bounce(
+    df: pd.DataFrame,
+    symbol: str,
+    tf_label: str,
+    mag7: list | None = None,
+) -> dict | None:
+    """
+    Strategy 3 — VWAP Bounce.
+
+    Conditions:
+      1. Intraday timeframe only (15m / 30m / 1h)
+      2. Price was above VWAP (uptrend)
+      3. Price pulled back and touched VWAP middle (within 0.5%)
+      4. Confirmation: candle CLOSED above VWAP after touch
+      5. Volume spike on bounce candle (>1.5x avg)
+      6. SMA20 > SMA200 (bigger trend is bullish)
+      7. Only 1st or 2nd touch of session (fresh signal)
+      8. Stocks: skip 11AM–1PM ET (lunch chop)
+    """
+    if mag7 is None:
+        mag7 = []
+
+    # Condition 1: Intraday only
+    if tf_label not in VWAP_TIMEFRAMES:
+        return None
+
+    df = add_all_indicators_with_vwap(df)
+    df.dropna(subset=["vwap", "vwap_upper", "vwap_lower",
+                      "sma20", "sma200", "volume_ratio"], inplace=True)
+
+    if len(df) < 10:
+        return None
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    # Condition 2: Price was above VWAP — check previous candle
+    if prev["close"] <= prev["vwap"]:
+        return None
+
+    # Condition 3: Last candle touched VWAP (low within tolerance)
+    touched_vwap = (
+        abs(last["low"] - last["vwap"]) / last["vwap"] <= VWAP_TOUCH_TOLERANCE
+        or last["low"] <= last["vwap"] <= last["high"]
+    )
+    if not touched_vwap:
+        return None
+
+    # Condition 4: Candle closed ABOVE VWAP (confirmation — no fake bounce)
+    if last["close"] <= last["vwap"]:
+        return None
+
+    # Condition 5: Volume spike on bounce candle
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+        return None
+
+    # Condition 6: SMA20 > SMA200 — bigger trend is bullish
+    if last["sma20"] <= last["sma200"]:
+        return None
+
+    # Condition 7: Only 1st or 2nd touch of session
+    touches = _count_vwap_touches(df)
+    if touches > MAX_VWAP_TOUCHES:
+        return None
+
+    # Condition 8: Skip lunch hour for stocks
+    if _is_stock_lunch_hour(tf_label, symbol, mag7):
+        return None
+
+    # ── Build trade levels ────────────────────────────────────────────────────
+    entry      = last["close"]
+    stop       = last["vwap_lower"] * 0.99   # Below lower VWAP band
+    target     = last["vwap_upper"]           # Upper VWAP band
+
+    risk = entry - stop
+    if risk <= 0:
+        return None
+
+    rr         = round((target - entry) / risk, 2)
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((target - entry) / entry * 100, 2)
+
+    # Minimum R:R check
+    if rr < 1.2:
+        return None
+
+    # Strength
+    if last["volume_ratio"] > 2.0 and touches == 1:
+        strength = "STRONG"
+    elif last["volume_ratio"] > 1.5:
+        strength = "MODERATE"
+    else:
+        strength = "WATCH"
+
+    return {
+        "symbol":        symbol,
+        "timeframe":     tf_label,
+        "strategy":      "VWAP BOUNCE",
+        "strength":      strength,
+        "pattern":       f"VWAP touch #{touches} — confirmed bounce",
+        "entry":         round(entry,              6),
+        "stop":          round(stop,               6),
+        "target":        round(target,             6),
+        "rr":            rr,
+        "stop_pct":      stop_pct,
+        "target_pct":    target_pct,
+        "vwap":          round(last["vwap"],       6),
+        "vwap_upper":    round(last["vwap_upper"], 6),
+        "vwap_lower":    round(last["vwap_lower"], 6),
+        "sma20":         round(last["sma20"],      4),
+        "sma200":        round(last["sma200"],     4),
+        "volume_ratio":  round(last["volume_ratio"], 2),
+        "close":         round(last["close"],      4),
+        "touch_number":  touches,
     }
