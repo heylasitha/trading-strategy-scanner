@@ -2,11 +2,23 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import requests
 
 from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, CRYPTO, TIMEFRAMES, MIN_BARS
+
+# How far back to fetch data per timeframe to ensure 200+ bars
+TF_LOOKBACK_DAYS = {
+    "15m": 90,
+    "30m": 120,
+    "1h":  365,
+    "2h":  365,
+    "4h":  730,
+    "1d":  1500,
+    "1w":  2000,
+}
 
 log = logging.getLogger(__name__)
 
@@ -57,12 +69,15 @@ def _fetch_alpaca(symbol: str, tf_label: str) -> pd.DataFrame | None:
     is_crypto = symbol in CRYPTO
     alpaca_symbol = CRYPTO_SYMBOL_MAP.get(symbol, symbol) if is_crypto else symbol
 
+    lookback = TF_LOOKBACK_DAYS.get(tf_label, 365)
+    start    = (datetime.now(timezone.utc) - timedelta(days=lookback)).strftime("%Y-%m-%d")
+
     if is_crypto:
         url    = f"{ALPACA_CRYPTO_URL}/bars"
-        params = {"symbols": alpaca_symbol, "timeframe": alpaca_tf, "limit": 1000, "sort": "asc"}
+        params = {"symbols": alpaca_symbol, "timeframe": alpaca_tf, "limit": 1000, "sort": "asc", "start": start}
     else:
         url    = f"{ALPACA_STOCK_URL}/{symbol}/bars"
-        params = {"timeframe": alpaca_tf, "limit": 1000, "adjustment": "split", "feed": "iex", "sort": "asc"}
+        params = {"timeframe": alpaca_tf, "limit": 1000, "adjustment": "split", "feed": "iex", "sort": "asc", "start": start}
 
     try:
         resp = requests.get(url, headers=_headers(), params=params, timeout=15)
