@@ -289,8 +289,10 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
 
 # ── Strategy 3: VWAP Bounce ───────────────────────────────────────────────────
 
-# Intraday timeframes only — VWAP resets daily
-VWAP_TIMEFRAMES = {"15m", "30m", "1h"}
+# Stocks: intraday only (VWAP resets daily, higher TFs have too few bars)
+STOCK_VWAP_TIMEFRAMES  = {"15m", "30m", "1h"}
+# Crypto: 24/7 market — VWAP meaningful on higher timeframes too
+CRYPTO_VWAP_TIMEFRAMES = {"15m", "30m", "1h", "2h", "4h", "1d"}
 
 # How close price must be to VWAP to count as a touch (0.5%)
 VWAP_TOUCH_TOLERANCE = 0.005
@@ -329,12 +331,13 @@ def detect_vwap_bounce(
     symbol: str,
     tf_label: str,
     mag7: list | None = None,
+    crypto_symbols: list | None = None,
 ) -> dict | None:
     """
     Strategy 3 — VWAP Bounce.
 
     Conditions:
-      1. Intraday timeframe only (15m / 30m / 1h)
+      1. Valid timeframe: stocks 15m/30m/1h only; crypto adds 2h/4h/1d
       2. Price was above VWAP (uptrend)
       3. Price pulled back and touched VWAP middle (within 0.5%)
       4. Confirmation: candle CLOSED above VWAP after touch
@@ -345,9 +348,12 @@ def detect_vwap_bounce(
     """
     if mag7 is None:
         mag7 = []
+    if crypto_symbols is None:
+        crypto_symbols = []
 
-    # Condition 1: Intraday only
-    if tf_label not in VWAP_TIMEFRAMES:
+    # Condition 1: Timeframe gate — crypto allows higher TFs, stocks do not
+    allowed_tfs = CRYPTO_VWAP_TIMEFRAMES if symbol in crypto_symbols else STOCK_VWAP_TIMEFRAMES
+    if tf_label not in allowed_tfs:
         return None
 
     df = add_all_indicators_with_vwap(df)

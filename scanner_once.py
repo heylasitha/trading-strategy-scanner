@@ -140,7 +140,7 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
         # ── Strategy 3: VWAP Bounce ───────────────────────────────────────
         s3_key = f"s3_{symbol}_{tf_label}"
         if not already_alerted(state, s3_key, ""):
-            vwap_signal = detect_vwap_bounce(df, symbol, tf_label, mag7=MAG7)
+            vwap_signal = detect_vwap_bounce(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
             if vwap_signal:
                 log.info(f"  VWAP BOUNCE: {symbol} {tf_label} | {vwap_signal['strength']}")
                 if send_telegram_alert(vwap_signal):
