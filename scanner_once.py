@@ -15,7 +15,7 @@ import pytz
 
 from config import MAG7, EXTRA_STOCKS, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
-from strategy import detect_signal, detect_golden_cross, detect_vwap_bounce
+from strategy import detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
 
@@ -133,6 +133,16 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                 if send_telegram_alert(vwap_signal):
                     log_signal(vwap_signal)
                     mark_alerted(state, s3_key, "")
+                    alerts_sent += 1
+
+        # ── Strategy 4: VWAP Fakeout Reversal (Telegram only — no Sheets yet) ──
+        s4_key = f"s4_{symbol}_{tf_label}"
+        if not already_alerted(state, s4_key, ""):
+            fakeout_signal = detect_vwap_fakeout(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
+            if fakeout_signal:
+                log.info(f"  VWAP FAKEOUT: {symbol} {tf_label} | {fakeout_signal['strength']}")
+                if send_telegram_alert(fakeout_signal):
+                    mark_alerted(state, s4_key, "")
                     alerts_sent += 1
 
     return alerts_sent

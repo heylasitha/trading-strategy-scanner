@@ -445,3 +445,121 @@ def detect_vwap_bounce(
         "close":         round(last["close"],      4),
         "touch_number":  touches,
     }
+
+
+# ── Strategy 4: VWAP Fakeout Reversal ────────────────────────────────────────
+
+def detect_vwap_fakeout(
+    df: pd.DataFrame,
+    symbol: str,
+    tf_label: str,
+    mag7: list | None = None,
+    crypto_symbols: list | None = None,
+) -> dict | None:
+    """
+    Strategy 4 — VWAP Fakeout Reversal.
+
+    Conditions:
+      1. Valid timeframe (same as VWAP Bounce)
+      2. At least 3 previous candles closed ABOVE VWAP (established uptrend)
+      3. Fakeout candle: low pierced BELOW VWAP but closed BACK ABOVE it
+         (stop hunt — weak hands flushed out)
+      4. Confirmation candle (current): green (close > open) AND above VWAP
+      5. Volume spike on fakeout OR confirmation candle (>1.5x avg)
+      6. SMA20 > SMA200 (bigger trend is bullish)
+      7. R:R >= 1.5
+    """
+    if mag7 is None:
+        mag7 = []
+    if crypto_symbols is None:
+        crypto_symbols = []
+
+    allowed_tfs = CRYPTO_VWAP_TIMEFRAMES if symbol in crypto_symbols else STOCK_VWAP_TIMEFRAMES
+    if tf_label not in allowed_tfs:
+        return None
+
+    df = add_all_indicators_with_vwap(df)
+    df.dropna(subset=["vwap", "vwap_upper", "vwap_lower",
+                      "sma20", "sma200", "volume_ratio"], inplace=True)
+
+    if len(df) < 10:
+        return None
+
+    last    = df.iloc[-1]   # confirmation candle
+    fakeout = df.iloc[-2]   # fakeout candle
+
+    # Condition 2: Last 3 candles before fakeout were above VWAP
+    prior = df.iloc[-5:-2]
+    if not all(row["close"] > row["vwap"] for _, row in prior.iterrows()):
+        return None
+
+    # Condition 3: Fakeout candle — low below VWAP but closed above
+    fakeout_occurred = (
+        fakeout["low"] < fakeout["vwap"] and
+        fakeout["close"] > fakeout["vwap"]
+    )
+    if not fakeout_occurred:
+        return None
+
+    # Condition 4: Confirmation candle — green and above VWAP
+    if last["close"] <= last["open"]:
+        return None
+    if last["close"] <= last["vwap"]:
+        return None
+
+    # Condition 5: Volume spike on either fakeout or confirmation candle
+    volume_confirmed = (
+        fakeout["volume_ratio"] >= VOLUME_MULTIPLIER or
+        last["volume_ratio"]   >= VOLUME_MULTIPLIER
+    )
+    if pd.isna(last["volume_ratio"]) or not volume_confirmed:
+        return None
+
+    # Condition 6: SMA20 > SMA200
+    if last["sma20"] <= last["sma200"]:
+        return None
+
+    # ── Build trade levels ────────────────────────────────────────────────────
+    entry  = last["close"]
+    stop   = fakeout["low"] * 0.99    # just below the fakeout wick
+    target = last["vwap_upper"]        # upper VWAP band
+
+    risk = entry - stop
+    if risk <= 0:
+        return None
+
+    rr         = round((target - entry) / risk, 2)
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((target - entry) / entry * 100, 2)
+
+    if rr < 1.5:
+        return None
+
+    if last["volume_ratio"] > 2.0:
+        strength = "STRONG"
+    elif last["volume_ratio"] > 1.5:
+        strength = "MODERATE"
+    else:
+        strength = "WATCH"
+
+    return {
+        "symbol":        symbol,
+        "timeframe":     tf_label,
+        "strategy":      "VWAP FAKEOUT",
+        "strength":      strength,
+        "pattern":       "Fakeout below VWAP — reversal confirmed",
+        "entry":         round(entry,              6),
+        "stop":          round(stop,               6),
+        "target":        round(target,             6),
+        "rr":            rr,
+        "stop_pct":      stop_pct,
+        "target_pct":    target_pct,
+        "vwap":          round(last["vwap"],       6),
+        "vwap_upper":    round(last["vwap_upper"], 6),
+        "vwap_lower":    round(last["vwap_lower"], 6),
+        "sma20":         round(last["sma20"],      4),
+        "sma200":        round(last["sma200"],     4),
+        "volume_ratio":  round(last["volume_ratio"], 2),
+        "close":         round(last["close"],      4),
+        "fakeout_low":   round(fakeout["low"],     6),
+    }

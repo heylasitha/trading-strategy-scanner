@@ -213,6 +213,60 @@ def _format_vwap_bounce(signal: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_vwap_fakeout(signal: dict) -> str:
+    sym      = signal["symbol"]
+    tf       = signal["timeframe"]
+    strength = signal["strength"]
+    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+
+    now_utc  = datetime.now(timezone.utc)
+    now_sgt  = now_utc.astimezone(SGT)
+    now_et   = now_utc.astimezone(ET)
+    time_str = (
+        f"{now_sgt.strftime('%Y-%m-%d %H:%M')} SGT  |  "
+        f"{now_et.strftime('%H:%M')} ET"
+    )
+
+    entry      = _format_price(signal["entry"],      sym)
+    stop       = _format_price(signal["stop"],       sym)
+    target     = _format_price(signal["target"],     sym)
+    vwap       = _format_price(signal["vwap"],       sym)
+    vwap_upper = _format_price(signal["vwap_upper"], sym)
+    fakeout    = _format_price(signal["fakeout_low"],sym)
+
+    lines = [
+        f"{emoji} 🪤 VWAP FAKEOUT REVERSAL",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Asset     : {sym}",
+        f"Timeframe : {tf.upper()}",
+        f"Pattern   : {signal['pattern']}",
+        f"Strength  : {strength}",
+        f"",
+        f"📊 VWAP Levels:",
+        f"  Upper (+1SD) : {vwap_upper}  🎯 Target",
+        f"  VWAP Middle  : {vwap}",
+        f"  Fakeout Low  : {fakeout}  🪤 Stop hunt",
+        f"",
+        f"📉 Trend Confirmation:",
+        f"  SMA 20  : {_format_price(signal['sma20'],  sym)}  ✅",
+        f"  SMA 200 : {_format_price(signal['sma200'], sym)}  ✅",
+        f"",
+        f"📦 Volume",
+        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"",
+        f"🎯 Trade Levels",
+        f"  Entry   : {entry}",
+        f"  Stop    : {stop}  (-{signal['stop_pct']}%)",
+        f"  Target  : {target}  (+{signal['target_pct']}%)",
+        f"  R:R     : {signal['rr']} : 1",
+        f"",
+        f"⏰ {time_str}",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"⚠️  Stop hunt confirmed — ride the reversal",
+    ]
+    return "\n".join(lines)
+
+
 def send_telegram_alert(signal: dict) -> bool:
     """Format and send a Telegram message. Returns True on success."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -223,6 +277,8 @@ def send_telegram_alert(signal: dict) -> bool:
         message = _format_golden_cross(signal)
     elif signal.get("strategy") == "VWAP BOUNCE":
         message = _format_vwap_bounce(signal)
+    elif signal.get("strategy") == "VWAP FAKEOUT":
+        message = _format_vwap_fakeout(signal)
     else:
         message = _format_message(signal)
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
