@@ -114,37 +114,52 @@ def _fetch_binance(symbol: str, tf_label: str) -> pd.DataFrame | None:
     if not binance_symbol or not binance_tf:
         return None
 
-    params = {
-        "symbol":   binance_symbol,
-        "interval": binance_tf,
-        "limit":    1000,
-    }
+    rows     = []
+    end_time = None   # None = fetch most recent bars first
 
-    try:
-        resp = requests.get(BINANCE_URL, params=params, timeout=15)
-        if resp.status_code != 200:
-            log.error(f"Binance {symbol} {tf_label}: {resp.status_code}")
-            return None
+    for _ in range(5):   # max 5 pages × 1000 bars = 5000 bars
+        params = {
+            "symbol":   binance_symbol,
+            "interval": binance_tf,
+            "limit":    1000,
+        }
+        if end_time is not None:
+            params["endTime"] = end_time
 
-        raw = resp.json()
-        if not raw:
-            return None
+        try:
+            resp = requests.get(BINANCE_URL, params=params, timeout=15)
+            if resp.status_code != 200:
+                log.error(f"Binance {symbol} {tf_label}: {resp.status_code}")
+                break
+            raw = resp.json()
+            if not raw:
+                break
+        except Exception as e:
+            log.error(f"Binance fetch failed {symbol} {tf_label}: {e}")
+            break
 
-        df = pd.DataFrame(raw, columns=[
-            "open_time", "open", "high", "low", "close", "volume",
-            "close_time", "quote_volume", "trades",
-            "taker_buy_base", "taker_buy_quote", "ignore",
-        ])
-        df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
-        df = df.set_index("open_time")
-        df = df[["open", "high", "low", "close", "volume"]].astype(float)
-        df.sort_index(inplace=True)
-        df = df.iloc[:-1]  # drop last incomplete candle
-        return df
+        rows     = raw + rows          # prepend older data
+        if len(rows) >= MIN_BARS + 50: # enough — stop paging
+            break
 
-    except Exception as e:
-        log.error(f"Binance fetch failed {symbol} {tf_label}: {e}")
+        end_time = raw[0][0] - 1       # 1 ms before oldest bar → go further back
+        time.sleep(0.1)
+
+    if not rows:
         return None
+
+    df = pd.DataFrame(rows, columns=[
+        "open_time", "open", "high", "low", "close", "volume",
+        "close_time", "quote_volume", "trades",
+        "taker_buy_base", "taker_buy_quote", "ignore",
+    ])
+    df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+    df = df.set_index("open_time")
+    df = df[["open", "high", "low", "close", "volume"]].astype(float)
+    df = df[~df.index.duplicated(keep="last")]
+    df.sort_index(inplace=True)
+    df = df.iloc[:-1]   # drop last incomplete candle
+    return df
 
 
 def fetch_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame | None:
