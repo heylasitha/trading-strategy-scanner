@@ -7,6 +7,8 @@ from config import (
 )
 from indicators import add_all_indicators, add_all_indicators_with_vwap
 
+SHORT_ADX_THRESHOLD = 30   # stricter for shorts (stocks trend up long-term)
+
 
 # ── Strategy 2: Golden Cross ──────────────────────────────────────────────────
 
@@ -562,4 +564,369 @@ def detect_vwap_fakeout(
         "volume_ratio":  round(last["volume_ratio"], 2),
         "close":         round(last["close"],      4),
         "fakeout_low":   round(fakeout["low"],     6),
+    }
+
+
+# ── Short helpers ─────────────────────────────────────────────────────────────
+
+def _classify_bearish_pattern(df: pd.DataFrame) -> str:
+    last  = df.iloc[-1]
+    prev5 = df.iloc[-6:-1]
+
+    sma20_reject = any(row["high"] >= row["sma20"] * 0.99 for _, row in prev5.iterrows())
+    sma50_reject = any(row["high"] >= row["sma50"] * 0.99 for _, row in prev5.iterrows())
+
+    spread_now  = last["sma200"] - last["sma20"]
+    spread_prev = df.iloc[-6]["sma200"] - df.iloc[-6]["sma20"]
+    fan_widening = spread_now > spread_prev
+
+    recent_low   = df["low"].iloc[-11:-1].min()
+    breaking_low = last["close"] < recent_low
+
+    if sma20_reject and fan_widening:
+        return "SMA20 Rejection + Fan"
+    if sma50_reject and fan_widening:
+        return "SMA50 Rejection + Fan"
+    if breaking_low and fan_widening:
+        return "Breakdown + Fan"
+    if fan_widening:
+        return "SMA Fan Widening (Bearish)"
+    if sma20_reject:
+        return "SMA20 Rejection"
+    if sma50_reject:
+        return "SMA50 Rejection"
+    if breaking_low:
+        return "Structure Breakdown"
+    return "Bearish Momentum"
+
+
+def _calculate_levels_short(df: pd.DataFrame) -> dict:
+    last  = df.iloc[-1]
+    entry = last["close"]
+
+    swing_high = df["high"].iloc[-10:].max()
+    stop_raw   = swing_high * 1.01
+    stop       = max(stop_raw, last["sma50"] * 1.02)
+
+    risk = stop - entry
+    if risk <= 0:
+        return {}
+
+    target = entry - risk * MIN_RR
+    if target <= 0:
+        return {}
+
+    rr         = round((entry - target) / risk, 2)
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((entry - target) / entry * 100, 2)
+
+    return {
+        "entry":       round(entry,  6),
+        "stop":        round(stop,   6),
+        "target":      round(target, 6),
+        "risk":        round(risk,   6),
+        "rr":          rr,
+        "stop_pct":    stop_pct,
+        "target_pct":  target_pct,
+    }
+
+
+def _signal_strength_bearish(last: pd.Series, prev: pd.Series) -> str:
+    score = 0
+    if last["stoch_k"] < 30:
+        score += 1
+    if last["adx"] > 35:
+        score += 1
+    if last["volume_ratio"] > 2.0:
+        score += 1
+    k_gap = last["stoch_d"] - last["stoch_k"]   # D above K = bearish divergence
+    if k_gap > 15:
+        score += 1
+
+    if score >= 3:
+        return "STRONG"
+    if score >= 1:
+        return "MODERATE"
+    return "WATCH"
+
+
+# ── Strategy 5: Bearish SMA Stack ────────────────────────────────────────────
+
+def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    Mirror of detect_signal but for shorts.
+
+    Conditions:
+      1. SMA20 < SMA50 < SMA200  (bearish stack)
+      2. Price (close) < SMA20
+      3. Stochastic K < D
+      4. Stochastic K falling
+      5. Volume > 1.5x average
+      6. ADX > 30 (stricter — stocks trend up long-term)
+      7. Consistent bearish alignment over last 3 bars
+    """
+    df = add_all_indicators(df)
+    df.dropna(subset=["sma20", "sma50", "sma200", "stoch_k", "stoch_d", "adx", "volume_ratio"], inplace=True)
+
+    if len(df) < 15:
+        return None
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    if not (last["sma20"] < last["sma50"] < last["sma200"]):
+        return None
+
+    if last["close"] >= last["sma20"]:
+        return None
+
+    if last["stoch_k"] >= last["stoch_d"]:
+        return None
+
+    if last["stoch_k"] >= prev["stoch_k"]:
+        return None
+
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+        return None
+
+    if pd.isna(last["adx"]) or last["adx"] < SHORT_ADX_THRESHOLD:
+        return None
+
+    recent = df.iloc[-3:]
+    if not all(
+        row["sma20"] < row["sma50"] < row["sma200"]
+        for _, row in recent.iterrows()
+    ):
+        return None
+
+    levels = _calculate_levels_short(df)
+    if not levels:
+        return None
+
+    pattern  = _classify_bearish_pattern(df)
+    strength = _signal_strength_bearish(last, prev)
+
+    return {
+        "symbol":        symbol,
+        "timeframe":     tf_label,
+        "strategy":      "BEARISH SMA",
+        "strength":      strength,
+        "pattern":       pattern,
+        "entry":         levels["entry"],
+        "stop":          levels["stop"],
+        "target":        levels["target"],
+        "rr":            levels["rr"],
+        "stop_pct":      levels["stop_pct"],
+        "target_pct":    levels["target_pct"],
+        "sma20":         round(last["sma20"],        4),
+        "sma50":         round(last["sma50"],        4),
+        "sma200":        round(last["sma200"],       4),
+        "stoch_k":       round(last["stoch_k"],      2),
+        "stoch_d":       round(last["stoch_d"],      2),
+        "adx":           round(last["adx"],          2),
+        "adx_threshold": SHORT_ADX_THRESHOLD,
+        "volume_ratio":  round(last["volume_ratio"], 2),
+        "close":         round(last["close"],        4),
+    }
+
+
+# ── Strategy 6: Death Cross ───────────────────────────────────────────────────
+
+def detect_death_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    Death Cross: SMA 20 crosses BELOW SMA 200.
+
+    Conditions:
+      1. Previous bar: SMA20 >= SMA200
+      2. Current bar:  SMA20 <  SMA200  (the cross, or fresh within 3 bars)
+      3. Price below both SMAs
+      4. Volume > 1.5x average
+      5. ADX > 25
+    """
+    df = add_all_indicators(df)
+    df.dropna(subset=["sma20", "sma200", "adx", "volume_ratio"], inplace=True)
+
+    if len(df) < 5:
+        return None
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    cross_happened = (prev["sma20"] >= prev["sma200"]) and (last["sma20"] < last["sma200"])
+    if not cross_happened:
+        fresh_cross = False
+        for i in range(-3, 0):
+            bar      = df.iloc[i]
+            bar_prev = df.iloc[i - 1]
+            if (bar_prev["sma20"] >= bar_prev["sma200"]) and (bar["sma20"] < bar["sma200"]):
+                fresh_cross = True
+                break
+        if not fresh_cross:
+            return None
+
+    if last["close"] >= last["sma20"] or last["close"] >= last["sma200"]:
+        return None
+
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+        return None
+
+    if pd.isna(last["adx"]) or last["adx"] < ADX_THRESHOLD:
+        return None
+
+    entry = last["close"]
+    stop  = last["sma200"] * 1.02
+    risk  = stop - entry
+    if risk <= 0:
+        return None
+
+    target     = entry - risk * MIN_RR
+    if target <= 0:
+        return None
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((entry - target) / entry * 100, 2)
+    rr         = round((entry - target) / risk, 2)
+
+    if last["adx"] > 35 and last["volume_ratio"] > 2.0:
+        strength = "STRONG"
+    elif last["adx"] > 28:
+        strength = "MODERATE"
+    else:
+        strength = "WATCH"
+
+    return {
+        "symbol":        symbol,
+        "timeframe":     tf_label,
+        "strategy":      "DEATH CROSS",
+        "strength":      strength,
+        "pattern":       "SMA20 crossed below SMA200",
+        "entry":         round(entry,  6),
+        "stop":          round(stop,   6),
+        "target":        round(target, 6),
+        "rr":            rr,
+        "stop_pct":      stop_pct,
+        "target_pct":    target_pct,
+        "sma20":         round(last["sma20"],        4),
+        "sma200":        round(last["sma200"],        4),
+        "adx":           round(last["adx"],           2),
+        "volume_ratio":  round(last["volume_ratio"],  2),
+        "close":         round(last["close"],         4),
+    }
+
+
+# ── Strategy 7: Bearish VWAP Rejection ───────────────────────────────────────
+
+def detect_vwap_rejection(
+    df: pd.DataFrame,
+    symbol: str,
+    tf_label: str,
+    mag7: list | None = None,
+    crypto_symbols: list | None = None,
+) -> dict | None:
+    """
+    Strategy 7 — Bearish VWAP Rejection (mirror of VWAP Bounce).
+
+    Conditions:
+      1. Valid timeframe (same as VWAP Bounce)
+      2. Price was BELOW VWAP — downtrend established
+      3. Last candle rallied up and TOUCHED VWAP (high within tolerance)
+      4. Candle CLOSED BELOW VWAP — rejection confirmed
+      5. Volume spike (>1.5x avg)
+      6. SMA20 < SMA200 — bigger trend is bearish
+      7. Only 1st or 2nd touch of session
+      8. Stocks: skip 11AM–1PM ET lunch chop
+    """
+    if mag7 is None:
+        mag7 = []
+    if crypto_symbols is None:
+        crypto_symbols = []
+
+    allowed_tfs = CRYPTO_VWAP_TIMEFRAMES if symbol in crypto_symbols else STOCK_VWAP_TIMEFRAMES
+    if tf_label not in allowed_tfs:
+        return None
+
+    df = add_all_indicators_with_vwap(df)
+    df.dropna(subset=["vwap", "vwap_upper", "vwap_lower",
+                      "sma20", "sma200", "volume_ratio"], inplace=True)
+
+    if len(df) < 10:
+        return None
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    # Condition 2: Price was below VWAP previously
+    if prev["close"] >= prev["vwap"]:
+        return None
+
+    # Condition 3: Last candle touched VWAP from below
+    touched_vwap = (
+        abs(last["high"] - last["vwap"]) / last["vwap"] <= VWAP_TOUCH_TOLERANCE
+        or last["low"] <= last["vwap"] <= last["high"]
+    )
+    if not touched_vwap:
+        return None
+
+    # Condition 4: Closed BELOW VWAP — rejected
+    if last["close"] >= last["vwap"]:
+        return None
+
+    # Condition 5: Volume spike
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+        return None
+
+    # Condition 6: SMA20 < SMA200 — bigger trend is bearish
+    if last["sma20"] >= last["sma200"]:
+        return None
+
+    # Condition 7: Only 1st or 2nd touch of session
+    touches = _count_vwap_touches(df)
+    if touches > MAX_VWAP_TOUCHES:
+        return None
+
+    # Condition 8: Skip lunch hour for stocks
+    if _is_stock_lunch_hour(tf_label, symbol, mag7):
+        return None
+
+    entry  = last["close"]
+    stop   = last["vwap_upper"] * 1.01
+    target = last["vwap_lower"]
+
+    risk = stop - entry
+    if risk <= 0:
+        return None
+
+    rr         = round((entry - target) / risk, 2)
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((entry - target) / entry * 100, 2)
+
+    if rr < 1.2:
+        return None
+
+    if last["volume_ratio"] > 2.0 and touches == 1:
+        strength = "STRONG"
+    elif last["volume_ratio"] > 1.5:
+        strength = "MODERATE"
+    else:
+        strength = "WATCH"
+
+    return {
+        "symbol":        symbol,
+        "timeframe":     tf_label,
+        "strategy":      "VWAP REJECTION",
+        "strength":      strength,
+        "pattern":       f"VWAP touch #{touches} — rejected down",
+        "entry":         round(entry,              6),
+        "stop":          round(stop,               6),
+        "target":        round(target,             6),
+        "rr":            rr,
+        "stop_pct":      stop_pct,
+        "target_pct":    target_pct,
+        "vwap":          round(last["vwap"],       6),
+        "vwap_upper":    round(last["vwap_upper"], 6),
+        "vwap_lower":    round(last["vwap_lower"], 6),
+        "sma20":         round(last["sma20"],      4),
+        "sma200":        round(last["sma200"],     4),
+        "volume_ratio":  round(last["volume_ratio"], 2),
+        "close":         round(last["close"],      4),
+        "touch_number":  touches,
     }

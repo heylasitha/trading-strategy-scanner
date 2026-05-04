@@ -15,7 +15,10 @@ import pytz
 
 from config import MAG7, EXTRA_STOCKS, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
-from strategy import detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout
+from strategy import (
+    detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout,
+    detect_bearish_signal, detect_death_cross, detect_vwap_rejection,
+)
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
 
@@ -143,6 +146,41 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                 log.info(f"  VWAP FAKEOUT: {symbol} {tf_label} | {fakeout_signal['strength']}")
                 if send_telegram_alert(fakeout_signal):
                     mark_alerted(state, s4_key, "")
+                    alerts_sent += 1
+
+        # ── Strategy 5: Bearish SMA Stack ────────────────────────────────────
+        s5_key = f"s5_{symbol}_{tf_label}"
+        if not already_alerted(state, s5_key, ""):
+            bear_signal = detect_bearish_signal(df, symbol, tf_label)
+            if bear_signal:
+                log.info(f"  BEARISH SMA: {symbol} {tf_label} | {bear_signal['strength']} | {bear_signal['pattern']}")
+                if send_telegram_alert(bear_signal):
+                    log_signal(bear_signal)
+                    mark_alerted(state, s5_key, "")
+                    alerts_sent += 1
+            else:
+                log.info(f"  {symbol} {tf_label}: no S5 signal")
+
+        # ── Strategy 6: Death Cross ───────────────────────────────────────────
+        s6_key = f"s6_{symbol}_{tf_label}"
+        if not already_alerted(state, s6_key, ""):
+            dc_signal = detect_death_cross(df, symbol, tf_label)
+            if dc_signal:
+                log.info(f"  DEATH CROSS: {symbol} {tf_label} | {dc_signal['strength']}")
+                if send_telegram_alert(dc_signal):
+                    log_signal(dc_signal)
+                    mark_alerted(state, s6_key, "")
+                    alerts_sent += 1
+
+        # ── Strategy 7: Bearish VWAP Rejection ───────────────────────────────
+        s7_key = f"s7_{symbol}_{tf_label}"
+        if not already_alerted(state, s7_key, ""):
+            rejection_signal = detect_vwap_rejection(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
+            if rejection_signal:
+                log.info(f"  VWAP REJECTION: {symbol} {tf_label} | {rejection_signal['strength']}")
+                if send_telegram_alert(rejection_signal):
+                    log_signal(rejection_signal)
+                    mark_alerted(state, s7_key, "")
                     alerts_sent += 1
 
     return alerts_sent
