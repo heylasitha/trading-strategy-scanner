@@ -35,7 +35,7 @@ TF_LOOKBACK_DAYS = {
 }
 
 # ── Binance (crypto) — full multi-year history, free ─────────────────────────
-BINANCE_URL = "https://api.binance.com/api/v3/klines"
+BINANCE_URL = "https://api.binance.us/api/v3/klines"
 
 BINANCE_SYMBOL_MAP = {
     "BTC-USD": "BTCUSDT",
