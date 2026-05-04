@@ -489,7 +489,7 @@ def send_startup_message() -> None:
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "Watching:\n"
         "  📊 Mag7: AAPL MSFT NVDA GOOGL AMZN META TSLA\n"
-        "  📊 Stocks: VOO QQQM TSM AMD\n"
+        "  📊 Stocks: VOO QQQM TSM AMD SPY QQQ AVGO COIN\n"
         "  🪙 Crypto: BTC ETH LTC\n\n"
         "Timeframes: 15m 30m 1h 2h 4h 1d 1w\n\n"
         "Long Strategies:\n"
