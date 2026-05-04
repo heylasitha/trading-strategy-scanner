@@ -69,6 +69,17 @@ def add_adx(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_rsi(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    delta    = df["close"].diff()
+    gain     = delta.clip(lower=0)
+    loss     = (-delta).clip(lower=0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs       = avg_gain / avg_loss.replace(0, np.nan)
+    df["rsi"] = 100 - (100 / (1 + rs))
+    return df
+
+
 def add_volume_ratio(df: pd.DataFrame) -> pd.DataFrame:
     """Ratio of current volume to rolling average — >1.5 means strong volume."""
     avg_vol = df["volume"].rolling(VOLUME_LOOKBACK).mean()
@@ -107,7 +118,7 @@ def add_vwap(df: pd.DataFrame) -> pd.DataFrame:
 def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df = add_sma(df)
-    df = add_stochastic(df)
+    df = add_rsi(df)
     df = add_adx(df)
     df = add_volume_ratio(df)
     return df
@@ -116,7 +127,7 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
 def add_all_indicators_with_vwap(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df = add_sma(df)
-    df = add_stochastic(df)
+    df = add_rsi(df)
     df = add_adx(df)
     df = add_volume_ratio(df)
     df = add_vwap(df)

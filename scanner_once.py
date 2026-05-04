@@ -18,6 +18,7 @@ from data_fetcher import fetch_all_timeframes
 from strategy import (
     detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout,
     detect_bearish_signal, detect_death_cross, detect_vwap_rejection,
+    detect_orb_long, detect_orb_short,
 )
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
@@ -182,6 +183,30 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                     log_signal(rejection_signal)
                     mark_alerted(state, s7_key, "")
                     alerts_sent += 1
+
+    # ── Strategy 8/9: ORB — stocks only, 15m only, once per day ─────────────
+    if is_stock:
+        orb_df = tf_data.get("15m")
+        if orb_df is not None:
+            s8_key = f"s8_{symbol}"
+            if not already_alerted(state, s8_key, ""):
+                orb_long = detect_orb_long(orb_df, symbol, "15m")
+                if orb_long:
+                    log.info(f"  ORB LONG: {symbol} | {orb_long['strength']}")
+                    if send_telegram_alert(orb_long):
+                        log_signal(orb_long)
+                        mark_alerted(state, s8_key, "")
+                        alerts_sent += 1
+
+            s9_key = f"s9_{symbol}"
+            if not already_alerted(state, s9_key, ""):
+                orb_short = detect_orb_short(orb_df, symbol, "15m")
+                if orb_short:
+                    log.info(f"  ORB SHORT: {symbol} | {orb_short['strength']}")
+                    if send_telegram_alert(orb_short):
+                        log_signal(orb_short)
+                        mark_alerted(state, s9_key, "")
+                        alerts_sent += 1
 
     return alerts_sent
 

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pandas as pd
+import pytz
 
 from config import (
     ADX_THRESHOLD, VOLUME_MULTIPLIER, MIN_RR,
 )
 from indicators import add_all_indicators, add_all_indicators_with_vwap
+
+_ET = pytz.timezone("US/Eastern")
 
 SHORT_ADX_THRESHOLD = 30   # stricter for shorts (stocks trend up long-term)
 
@@ -183,14 +188,13 @@ def _calculate_levels(df: pd.DataFrame) -> dict:
 
 def _signal_strength(last: pd.Series, prev: pd.Series) -> str:
     score = 0
-    if last["stoch_k"] > 70:
+    if last["rsi"] > 65:
         score += 1
     if last["adx"] > 35:
         score += 1
     if last["volume_ratio"] > 2.0:
         score += 1
-    k_gap = last["stoch_k"] - last["stoch_d"]
-    if k_gap > 15:
+    if last["rsi"] - prev["rsi"] > 5:   # RSI rising fast
         score += 1
 
     if score >= 3:
@@ -217,7 +221,7 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
       7. Higher-timeframe alignment (SMA20 > SMA50 confirmed on last 3 bars)
     """
     df = add_all_indicators(df)
-    df.dropna(subset=["sma20", "sma50", "sma200", "stoch_k", "stoch_d", "adx", "volume_ratio"], inplace=True)
+    df.dropna(subset=["sma20", "sma50", "sma200", "rsi", "adx", "volume_ratio"], inplace=True)
 
     if len(df) < 15:
         return None
@@ -233,12 +237,12 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
     if last["close"] <= last["sma20"]:
         return None
 
-    # ── Condition 3: Stochastic K above D ────────────────────────────────────
-    if last["stoch_k"] <= last["stoch_d"]:
+    # ── Condition 3: RSI above 55 — confirmed bullish momentum ───────────────
+    if pd.isna(last["rsi"]) or last["rsi"] <= 55:
         return None
 
-    # ── Condition 4: Stochastic K rising ─────────────────────────────────────
-    if last["stoch_k"] <= prev["stoch_k"]:
+    # ── Condition 4: RSI rising ───────────────────────────────────────────────
+    if last["rsi"] <= prev["rsi"]:
         return None
 
     # ── Condition 5: Volume confirmation ─────────────────────────────────────
@@ -270,22 +274,19 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
         "timeframe":    tf_label,
         "strength":     strength,
         "pattern":      pattern,
-        # Price levels
         "entry":        levels["entry"],
         "stop":         levels["stop"],
         "target":       levels["target"],
         "rr":           levels["rr"],
         "stop_pct":     levels["stop_pct"],
         "target_pct":   levels["target_pct"],
-        # Indicator values
-        "sma20":        round(last["sma20"],       4),
-        "sma50":        round(last["sma50"],       4),
-        "sma200":       round(last["sma200"],      4),
-        "stoch_k":      round(last["stoch_k"],     2),
-        "stoch_d":      round(last["stoch_d"],     2),
-        "adx":          round(last["adx"],         2),
-        "volume_ratio": round(last["volume_ratio"],2),
-        "close":        round(last["close"],       4),
+        "sma20":        round(last["sma20"],        4),
+        "sma50":        round(last["sma50"],        4),
+        "sma200":       round(last["sma200"],       4),
+        "rsi":          round(last["rsi"],          2),
+        "adx":          round(last["adx"],          2),
+        "volume_ratio": round(last["volume_ratio"], 2),
+        "close":        round(last["close"],        4),
     }
 
 
@@ -633,14 +634,13 @@ def _calculate_levels_short(df: pd.DataFrame) -> dict:
 
 def _signal_strength_bearish(last: pd.Series, prev: pd.Series) -> str:
     score = 0
-    if last["stoch_k"] < 30:
+    if last["rsi"] < 35:
         score += 1
     if last["adx"] > 35:
         score += 1
     if last["volume_ratio"] > 2.0:
         score += 1
-    k_gap = last["stoch_d"] - last["stoch_k"]   # D above K = bearish divergence
-    if k_gap > 15:
+    if prev["rsi"] - last["rsi"] > 5:   # RSI falling fast
         score += 1
 
     if score >= 3:
@@ -666,7 +666,7 @@ def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict 
       7. Consistent bearish alignment over last 3 bars
     """
     df = add_all_indicators(df)
-    df.dropna(subset=["sma20", "sma50", "sma200", "stoch_k", "stoch_d", "adx", "volume_ratio"], inplace=True)
+    df.dropna(subset=["sma20", "sma50", "sma200", "rsi", "adx", "volume_ratio"], inplace=True)
 
     if len(df) < 15:
         return None
@@ -680,10 +680,12 @@ def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict 
     if last["close"] >= last["sma20"]:
         return None
 
-    if last["stoch_k"] >= last["stoch_d"]:
+    # RSI below 45 — confirmed bearish momentum
+    if pd.isna(last["rsi"]) or last["rsi"] >= 45:
         return None
 
-    if last["stoch_k"] >= prev["stoch_k"]:
+    # RSI falling
+    if last["rsi"] >= prev["rsi"]:
         return None
 
     if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
@@ -721,8 +723,7 @@ def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict 
         "sma20":         round(last["sma20"],        4),
         "sma50":         round(last["sma50"],        4),
         "sma200":        round(last["sma200"],       4),
-        "stoch_k":       round(last["stoch_k"],      2),
-        "stoch_d":       round(last["stoch_d"],      2),
+        "rsi":           round(last["rsi"],          2),
         "adx":           round(last["adx"],          2),
         "adx_threshold": SHORT_ADX_THRESHOLD,
         "volume_ratio":  round(last["volume_ratio"], 2),
@@ -929,4 +930,201 @@ def detect_vwap_rejection(
         "volume_ratio":  round(last["volume_ratio"], 2),
         "close":         round(last["close"],      4),
         "touch_number":  touches,
+    }
+
+
+# ── Strategy 8/9: Opening Range Breakout (ORB) ────────────────────────────────
+
+def _get_orb_levels(df: pd.DataFrame):
+    """Return (orb_high, orb_low) of today's first 15m candle in ET, or (None, None)."""
+    df_et = df.copy()
+    df_et.index = df_et.index.tz_convert(_ET)
+
+    now_et = datetime.now(timezone.utc).astimezone(_ET)
+    today  = now_et.date()
+
+    today_bars = df_et[df_et.index.date == today]
+    if len(today_bars) < 1:
+        return None, None
+
+    orb_bar = today_bars.iloc[0]
+    if not (orb_bar.name.hour == 9 and orb_bar.name.minute == 30):
+        return None, None
+
+    return orb_bar["high"], orb_bar["low"]
+
+
+def _orb_time_valid() -> bool:
+    """True if current ET time is in ORB valid window: 9:45 AM – 12:00 PM."""
+    now_et  = datetime.now(timezone.utc).astimezone(_ET)
+    if now_et.weekday() >= 5:
+        return False
+    mins = now_et.hour * 60 + now_et.minute
+    return 9 * 60 + 45 <= mins < 12 * 60
+
+
+def detect_orb_long(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    Strategy 8 — ORB Long.
+
+    Conditions:
+      1. 15m timeframe only
+      2. Current ET time is 9:45 AM – 12:00 PM (ORB valid window)
+      3. Opening range defined (first 15m candle at 9:30 ET)
+      4. Current close ABOVE ORB high
+      5. Volume > 1.5x average
+      6. SMA20 > SMA200 (trend filter)
+      7. R:R >= 1.5
+    """
+    if tf_label != "15m":
+        return None
+    if not _orb_time_valid():
+        return None
+
+    orb_high, orb_low = _get_orb_levels(df)
+    if orb_high is None:
+        return None
+
+    df = add_all_indicators(df)
+    df.dropna(subset=["sma20", "sma200", "rsi", "volume_ratio"], inplace=True)
+    if len(df) < 5:
+        return None
+
+    last = df.iloc[-1]
+
+    if last["close"] <= orb_high:
+        return None
+
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+        return None
+
+    if last["sma20"] <= last["sma200"]:
+        return None
+
+    entry     = last["close"]
+    stop      = orb_low * 0.99
+    risk      = entry - stop
+    if risk <= 0:
+        return None
+
+    orb_range  = orb_high - orb_low
+    target     = entry + orb_range * 2    # 2x ORB range projection
+    rr         = round((target - entry) / risk, 2)
+    if rr < 1.5:
+        target = entry + risk * MIN_RR
+        rr     = round((target - entry) / risk, 2)
+
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((target - entry) / entry * 100, 2)
+
+    if last["volume_ratio"] > 2.5 and last["rsi"] > 60:
+        strength = "STRONG"
+    elif last["volume_ratio"] > 1.8:
+        strength = "MODERATE"
+    else:
+        strength = "WATCH"
+
+    return {
+        "symbol":       symbol,
+        "timeframe":    tf_label,
+        "strategy":     "ORB LONG",
+        "strength":     strength,
+        "pattern":      f"Breakout above ORB high",
+        "entry":        round(entry,              6),
+        "stop":         round(stop,               6),
+        "target":       round(target,             6),
+        "rr":           rr,
+        "stop_pct":     stop_pct,
+        "target_pct":   target_pct,
+        "orb_high":     round(orb_high,           4),
+        "orb_low":      round(orb_low,            4),
+        "rsi":          round(last["rsi"],         2),
+        "volume_ratio": round(last["volume_ratio"],2),
+        "sma20":        round(last["sma20"],       4),
+        "sma200":       round(last["sma200"],      4),
+        "close":        round(last["close"],       4),
+    }
+
+
+def detect_orb_short(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    Strategy 9 — ORB Short.
+
+    Conditions:
+      1. 15m timeframe only
+      2. Current ET time is 9:45 AM – 12:00 PM
+      3. Opening range defined
+      4. Current close BELOW ORB low
+      5. Volume > 1.5x average
+      6. SMA20 < SMA200 (trend filter)
+      7. R:R >= 1.5
+    """
+    if tf_label != "15m":
+        return None
+    if not _orb_time_valid():
+        return None
+
+    orb_high, orb_low = _get_orb_levels(df)
+    if orb_high is None:
+        return None
+
+    df = add_all_indicators(df)
+    df.dropna(subset=["sma20", "sma200", "rsi", "volume_ratio"], inplace=True)
+    if len(df) < 5:
+        return None
+
+    last = df.iloc[-1]
+
+    if last["close"] >= orb_low:
+        return None
+
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+        return None
+
+    if last["sma20"] >= last["sma200"]:
+        return None
+
+    entry     = last["close"]
+    stop      = orb_high * 1.01
+    risk      = stop - entry
+    if risk <= 0:
+        return None
+
+    orb_range  = orb_high - orb_low
+    target     = entry - orb_range * 2
+    if target <= 0:
+        target = entry - risk * MIN_RR
+    rr         = round((entry - target) / risk, 2)
+    if rr < 1.5:
+        return None
+
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((entry - target) / entry * 100, 2)
+
+    if last["volume_ratio"] > 2.5 and last["rsi"] < 40:
+        strength = "STRONG"
+    elif last["volume_ratio"] > 1.8:
+        strength = "MODERATE"
+    else:
+        strength = "WATCH"
+
+    return {
+        "symbol":       symbol,
+        "timeframe":    tf_label,
+        "strategy":     "ORB SHORT",
+        "strength":     strength,
+        "pattern":      f"Breakdown below ORB low",
+        "entry":        round(entry,              6),
+        "stop":         round(stop,               6),
+        "target":       round(target,             6),
+        "rr":           rr,
+        "stop_pct":     stop_pct,
+        "target_pct":   target_pct,
+        "orb_high":     round(orb_high,           4),
+        "orb_low":      round(orb_low,            4),
+        "rsi":          round(last["rsi"],         2),
+        "volume_ratio": round(last["volume_ratio"],2),
+        "sma20":        round(last["sma20"],       4),
+        "sma200":       round(last["sma200"],      4),
+        "close":        round(last["close"],       4),
     }

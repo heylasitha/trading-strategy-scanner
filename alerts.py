@@ -81,9 +81,7 @@ def _format_message(signal: dict) -> str:
         f"  Price   : {close}",
         f"",
         f"📈 Momentum",
-        f"  Stoch K : {signal['stoch_k']:.1f}",
-        f"  Stoch D : {signal['stoch_d']:.1f}",
-        f"  K > D   : ✅ Rising",
+        f"  RSI     : {signal['rsi']:.1f}  ✅ Rising",
         f"",
         f"💪 Trend Strength",
         f"  ADX     : {signal['adx']:.1f}  ✅ (>{signal.get('adx_threshold', 25)})",
@@ -308,9 +306,7 @@ def _format_short_message(signal: dict) -> str:
         f"  Price   : {close}",
         f"",
         f"📉 Momentum",
-        f"  Stoch K : {signal['stoch_k']:.1f}",
-        f"  Stoch D : {signal['stoch_d']:.1f}",
-        f"  K < D   : ✅ Falling",
+        f"  RSI     : {signal['rsi']:.1f}  ✅ Falling",
         f"",
         f"💪 Trend Strength",
         f"  ADX     : {signal['adx']:.1f}  ✅ (>{signal.get('adx_threshold', 30)})",
@@ -440,6 +436,66 @@ def _format_vwap_rejection(signal: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_orb(signal: dict) -> str:
+    sym      = signal["symbol"]
+    tf       = signal["timeframe"]
+    strength = signal["strength"]
+    is_long  = signal["strategy"] == "ORB LONG"
+    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+    direction_label = "LONG 🟢" if is_long else "SHORT 🔴"
+    header   = "📈 ORB BREAKOUT — LONG" if is_long else "📉 ORB BREAKDOWN — SHORT"
+    stop_dir = f"-{signal['stop_pct']}%" if is_long else f"+{signal['stop_pct']}%"
+    tgt_dir  = f"+{signal['target_pct']}%" if is_long else f"-{signal['target_pct']}%"
+
+    now_utc = datetime.now(timezone.utc)
+    now_sgt = now_utc.astimezone(SGT)
+    now_et  = now_utc.astimezone(ET)
+    time_str = (
+        f"{now_sgt.strftime('%Y-%m-%d %H:%M')} SGT  |  "
+        f"{now_et.strftime('%H:%M')} ET"
+    )
+
+    orb_high = _format_price(signal["orb_high"], sym)
+    orb_low  = _format_price(signal["orb_low"],  sym)
+    entry    = _format_price(signal["entry"],    sym)
+    stop     = _format_price(signal["stop"],     sym)
+    target   = _format_price(signal["target"],   sym)
+
+    lines = [
+        f"{emoji} {header}",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Asset     : {sym}",
+        f"Timeframe : {tf.upper()}",
+        f"Direction : {direction_label}",
+        f"Strength  : {strength}",
+        f"",
+        f"📊 Opening Range:",
+        f"  ORB High : {orb_high}{'  ← Broken above' if is_long else ''}",
+        f"  ORB Low  : {orb_low}{'  ← Broken below' if not is_long else ''}",
+        f"",
+        f"💪 Trend Filter",
+        f"  SMA 20  : {_format_price(signal['sma20'],  sym)}  ✅",
+        f"  SMA 200 : {_format_price(signal['sma200'], sym)}  ✅",
+        f"",
+        f"📈 Momentum",
+        f"  RSI     : {signal['rsi']:.1f}  ✅",
+        f"",
+        f"📦 Volume",
+        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"",
+        f"🎯 Trade Levels",
+        f"  Entry   : {entry}",
+        f"  Stop    : {stop}  ({stop_dir})",
+        f"  Target  : {target}  ({tgt_dir})",
+        f"  R:R     : {signal['rr']} : 1",
+        f"",
+        f"⏰ {time_str}",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"⚠️  ORB {'breakout' if is_long else 'breakdown'} — ride the morning momentum",
+    ]
+    return "\n".join(lines)
+
+
 def send_telegram_alert(signal: dict) -> bool:
     """Format and send a Telegram message. Returns True on success."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -459,6 +515,8 @@ def send_telegram_alert(signal: dict) -> bool:
         message = _format_death_cross(signal)
     elif strategy == "VWAP REJECTION":
         message = _format_vwap_rejection(signal)
+    elif strategy in ("ORB LONG", "ORB SHORT"):
+        message = _format_orb(signal)
     else:
         message = _format_message(signal)
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
