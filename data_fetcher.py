@@ -69,43 +69,60 @@ def _fetch_alpaca(symbol: str, tf_label: str) -> pd.DataFrame | None:
     lookback = TF_LOOKBACK_DAYS.get(tf_label, 365)
     start    = (datetime.now(timezone.utc) - timedelta(days=lookback)).strftime("%Y-%m-%d")
 
-    params = {
-        "timeframe":  alpaca_tf,
-        "limit":      1000,
-        "adjustment": "split",
-        "feed":       "iex",
-        "sort":       "asc",
-        "start":      start,
-    }
+    all_bars   = []
+    page_token = None
 
-    try:
-        resp = requests.get(
-            f"{ALPACA_STOCK_URL}/{symbol}/bars",
-            headers=_alpaca_headers(),
-            params=params,
-            timeout=15,
-        )
-        if resp.status_code != 200:
-            log.error(f"Alpaca {symbol} {tf_label}: {resp.status_code} {resp.text[:200]}")
+    for _ in range(5):   # max 5 pages × 1000 bars = 5000 bars
+        params = {
+            "timeframe":  alpaca_tf,
+            "limit":      1000,
+            "adjustment": "split",
+            "feed":       "iex",
+            "sort":       "asc",
+            "start":      start,
+        }
+        if page_token:
+            params["page_token"] = page_token
+
+        try:
+            resp = requests.get(
+                f"{ALPACA_STOCK_URL}/{symbol}/bars",
+                headers=_alpaca_headers(),
+                params=params,
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                log.error(f"Alpaca {symbol} {tf_label}: {resp.status_code} {resp.text[:200]}")
+                return None
+
+            data       = resp.json()
+            bars       = data.get("bars") or []
+            page_token = data.get("next_page_token")
+
+            all_bars.extend(bars)
+
+            if not page_token or len(all_bars) >= MIN_BARS + 50:
+                break
+
+            time.sleep(0.2)
+
+        except Exception as e:
+            log.error(f"Alpaca fetch failed {symbol} {tf_label}: {e}")
             return None
 
-        bars = resp.json().get("bars") or []
-        if not bars:
-            log.info(f"Alpaca {symbol} {tf_label}: no bars returned")
-            return None
-
-        df = pd.DataFrame(bars)
-        df = df.rename(columns={"t": "datetime", "o": "open", "h": "high",
-                                 "l": "low",      "c": "close", "v": "volume"})
-        df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
-        df = df.set_index("datetime")
-        df = df[["open", "high", "low", "close", "volume"]].astype(float)
-        df.sort_index(inplace=True)
-        return df
-
-    except Exception as e:
-        log.error(f"Alpaca fetch failed {symbol} {tf_label}: {e}")
+    if not all_bars:
+        log.info(f"Alpaca {symbol} {tf_label}: no bars returned")
         return None
+
+    df = pd.DataFrame(all_bars)
+    df = df.rename(columns={"t": "datetime", "o": "open", "h": "high",
+                             "l": "low",      "c": "close", "v": "volume"})
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+    df = df.set_index("datetime")
+    df = df[["open", "high", "low", "close", "volume"]].astype(float)
+    df = df[~df.index.duplicated(keep="last")]
+    df.sort_index(inplace=True)
+    return df
 
 
 def _fetch_binance(symbol: str, tf_label: str) -> pd.DataFrame | None:
