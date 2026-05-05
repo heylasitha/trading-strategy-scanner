@@ -6,7 +6,7 @@ import pandas as pd
 import pytz
 
 from config import (
-    ADX_THRESHOLD, VOLUME_MULTIPLIER, MIN_RR,
+    ADX_THRESHOLD, VOLUME_MULTIPLIER, VWAP_VOLUME_MULTIPLIER, MIN_RR,
 )
 from indicators import add_all_indicators, add_all_indicators_with_vwap
 
@@ -245,11 +245,7 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
     if last["rsi"] <= prev["rsi"]:
         return None
 
-    # ── Condition 5: Volume confirmation ─────────────────────────────────────
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
-        return None
-
-    # ── Condition 6: ADX trend strength ──────────────────────────────────────
+    # ── Condition 5: ADX trend strength ──────────────────────────────────────
     if pd.isna(last["adx"]) or last["adx"] < ADX_THRESHOLD:
         return None
 
@@ -386,7 +382,7 @@ def detect_vwap_bounce(
         return None
 
     # Condition 5: Volume spike on bounce candle
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VWAP_VOLUME_MULTIPLIER:
         return None
 
     # Condition 6: SMA20 > SMA200 — bigger trend is bullish
@@ -512,8 +508,8 @@ def detect_vwap_fakeout(
 
     # Condition 5: Volume spike on either fakeout or confirmation candle
     volume_confirmed = (
-        fakeout["volume_ratio"] >= VOLUME_MULTIPLIER or
-        last["volume_ratio"]   >= VOLUME_MULTIPLIER
+        fakeout["volume_ratio"] >= VWAP_VOLUME_MULTIPLIER or
+        last["volume_ratio"]   >= VWAP_VOLUME_MULTIPLIER
     )
     if pd.isna(last["volume_ratio"]) or not volume_confirmed:
         return None
@@ -686,9 +682,6 @@ def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict 
 
     # RSI falling
     if last["rsi"] >= prev["rsi"]:
-        return None
-
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
         return None
 
     if pd.isna(last["adx"]) or last["adx"] < SHORT_ADX_THRESHOLD:
@@ -872,7 +865,7 @@ def detect_vwap_rejection(
         return None
 
     # Condition 5: Volume spike
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VWAP_VOLUME_MULTIPLIER:
         return None
 
     # Condition 6: SMA20 < SMA200 — bigger trend is bearish
