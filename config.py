@@ -41,7 +41,8 @@ ADX_PERIOD        = 14
 ADX_THRESHOLD     = 25       # ADX must be above this
 
 VOLUME_LOOKBACK   = 20
-VOLUME_MULTIPLIER = 1.2      # Current volume must be 1.2x the average
+VOLUME_MULTIPLIER      = 1.2  # For crosses (S2/S6) and ORB (S8/S9)
+VWAP_VOLUME_MULTIPLIER = 1.5  # For VWAP strategies (S3/S4/S7) — reversal needs clear spike
 
 # ── Signal Filter ─────────────────────────────────────────────────────────────
 MIN_RR           = 2.0       # Minimum Risk:Reward ratio
