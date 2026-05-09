@@ -60,10 +60,6 @@ def detect_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | 
     if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
         return None
 
-    # Condition 5: ADX — trending market only
-    if pd.isna(last["adx"]) or last["adx"] < ADX_THRESHOLD:
-        return None
-
     # Calculate levels
     entry     = last["close"]
     stop      = last["sma200"] * 0.98   # Stop below SMA200
@@ -76,10 +72,10 @@ def detect_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | 
     target_pct = round((target - entry) / entry * 100, 2)
     rr         = round((target - entry) / risk, 2)
 
-    # Strength based on ADX and volume
-    if last["adx"] > 35 and last["volume_ratio"] > 2.0:
+    # Strength based on volume
+    if last["volume_ratio"] > 2.0:
         strength = "STRONG"
-    elif last["adx"] > 28:
+    elif last["volume_ratio"] > 1.5:
         strength = "MODERATE"
     else:
         strength = "WATCH"
@@ -686,6 +682,10 @@ def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict 
         return None
 
     if pd.isna(last["adx"]) or last["adx"] < SHORT_ADX_THRESHOLD:
+        return None
+
+    # Volume confirmation — was missing, caused 0.4x signals to fire
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
         return None
 
     recent = df.iloc[-3:]
