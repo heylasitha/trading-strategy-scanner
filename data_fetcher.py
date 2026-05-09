@@ -77,7 +77,7 @@ def _fetch_alpaca(symbol: str, tf_label: str) -> pd.DataFrame | None:
             "timeframe":  alpaca_tf,
             "limit":      1000,
             "adjustment": "split",
-            "feed":       "iex",
+            "feed":       "delayed_sip",
             "sort":       "asc",
             "start":      start,
         }
@@ -186,6 +186,12 @@ def fetch_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame | None:
         return None
     if len(df) < MIN_BARS:
         log.info(f"{symbol} {tf_label}: only {len(df)} bars (need {MIN_BARS}) — skipping")
+        return None
+
+    last_bar_time = df.index[-1]
+    cutoff = datetime.now(timezone.utc) - timedelta(days=3)
+    if last_bar_time < cutoff:
+        log.warning(f"{symbol} {tf_label}: stale data, last bar {last_bar_time.date()} — skipping")
         return None
 
     log.info(f"{symbol} {tf_label}: {len(df)} bars fetched ✓")
