@@ -7,6 +7,7 @@ import pytz
 
 from config import (
     ADX_THRESHOLD, VOLUME_MULTIPLIER, VWAP_VOLUME_MULTIPLIER, MIN_RR,
+    SMA_COMPRESSION_THRESHOLD,
 )
 from indicators import add_all_indicators, add_all_indicators_with_vwap
 
@@ -1120,4 +1121,95 @@ def detect_orb_short(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | Non
         "sma20":        round(last["sma20"],       4),
         "sma200":       round(last["sma200"],      4),
         "close":        round(last["close"],       4),
+    }
+
+
+# ── Strategy 10: SMA Compression Breakout ────────────────────────────────────
+
+def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    Fires when all 3 SMAs are compressed within 3% of each other and a
+    strong bullish engulfing candle breaks above the entire SMA cluster.
+
+    Conditions:
+      1. SMA20, SMA50, SMA200 spread <= 3%  (compression)
+      2. Current candle open <= top of SMA cluster (started inside/below)
+      3. Current candle close > all 3 SMAs  (broke above cluster)
+      4. Current candle is bullish (close > open)
+      5. Current candle body > average body of last 3 candles (strong move)
+    """
+    df = add_all_indicators(df)
+    df.dropna(subset=["sma20", "sma50", "sma200"], inplace=True)
+
+    if len(df) < 6:
+        return None
+
+    last = df.iloc[-1]
+
+    sma20  = last["sma20"]
+    sma50  = last["sma50"]
+    sma200 = last["sma200"]
+
+    sma_max = max(sma20, sma50, sma200)
+    sma_min = min(sma20, sma50, sma200)
+
+    if sma_min <= 0:
+        return None
+
+    # 1. SMA compression
+    spread = (sma_max - sma_min) / sma_min
+    if spread > SMA_COMPRESSION_THRESHOLD:
+        return None
+
+    # 2. Candle opened inside or below SMA cluster
+    if last["open"] > sma_max * 1.005:
+        return None
+
+    # 3. Candle closed above all 3 SMAs
+    if not (last["close"] > sma20 and last["close"] > sma50 and last["close"] > sma200):
+        return None
+
+    # 4. Bullish candle
+    if last["close"] <= last["open"]:
+        return None
+
+    # 5. Strong body vs recent average
+    recent_bodies = [
+        abs(df.iloc[i]["close"] - df.iloc[i]["open"])
+        for i in range(-4, -1)
+    ]
+    avg_body     = sum(recent_bodies) / len(recent_bodies)
+    current_body = last["close"] - last["open"]
+    if avg_body <= 0 or current_body <= avg_body:
+        return None
+
+    # Calculate trade levels
+    entry = last["close"]
+    stop  = sma_min * 0.98
+    risk  = entry - stop
+    if risk <= 0:
+        return None
+
+    target     = entry + risk * MIN_RR
+    rr         = round((target - entry) / risk, 2)
+    stop_pct   = round(risk / entry * 100, 2)
+    target_pct = round((target - entry) / entry * 100, 2)
+
+    return {
+        "symbol":      symbol,
+        "timeframe":   tf_label,
+        "strategy":    "SMA COMPRESSION",
+        "pattern":     "SMA Compression Breakout",
+        "entry":       round(entry,  6),
+        "stop":        round(stop,   6),
+        "target":      round(target, 6),
+        "rr":          rr,
+        "stop_pct":    stop_pct,
+        "target_pct":  target_pct,
+        "sma20":       round(sma20,  6),
+        "sma50":       round(sma50,  6),
+        "sma200":      round(sma200, 6),
+        "spread_pct":  round(spread * 100, 2),
+        "body_ratio":  round(current_body / avg_body, 2),
+        "close":       round(last["close"], 6),
     }

@@ -496,6 +496,56 @@ def _format_orb(signal: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_sma_compression(signal: dict) -> str:
+    sym  = signal["symbol"]
+    tf   = signal["timeframe"]
+
+    now_utc  = datetime.now(timezone.utc)
+    now_sgt  = now_utc.astimezone(SGT)
+    now_et   = now_utc.astimezone(ET)
+    time_str = (
+        f"{now_sgt.strftime('%Y-%m-%d %H:%M')} SGT  |  "
+        f"{now_et.strftime('%H:%M')} ET"
+    )
+
+    priority = TF_PRIORITY.get(tf, "📊 SETUP")
+    entry    = _format_price(signal["entry"],  sym)
+    stop     = _format_price(signal["stop"],   sym)
+    target   = _format_price(signal["target"], sym)
+    sma20    = _format_price(signal["sma20"],  sym)
+    sma50    = _format_price(signal["sma50"],  sym)
+    sma200   = _format_price(signal["sma200"], sym)
+    close    = _format_price(signal["close"],  sym)
+
+    lines = [
+        f"🔥 💥 SMA COMPRESSION BREAKOUT",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Asset     : {sym}",
+        f"Timeframe : {tf.upper()}",
+        f"",
+        f"📊 SMA Cluster (Compressed ✅)",
+        f"  SMA 20  : {sma20}",
+        f"  SMA 50  : {sma50}",
+        f"  SMA 200 : {sma200}",
+        f"  Spread  : {signal['spread_pct']}%",
+        f"  Price   : {close}",
+        f"",
+        f"🕯 Breakout Candle",
+        f"  Body    : {signal['body_ratio']}x avg  ✅ Strong engulf",
+        f"",
+        f"🎯 Trade Levels",
+        f"  Entry   : {entry}",
+        f"  Stop    : {stop}  (-{signal['stop_pct']}%)",
+        f"  Target  : {target}  (+{signal['target_pct']}%)",
+        f"  R:R     : {signal['rr']} : 1",
+        f"",
+        f"⏰ {time_str}",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"⚠️  Confirm on candle close before entry",
+    ]
+    return "\n".join(lines)
+
+
 def send_telegram_alert(signal: dict) -> bool:
     """Format and send a Telegram message. Returns True on success."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -517,6 +567,8 @@ def send_telegram_alert(signal: dict) -> bool:
         message = _format_vwap_rejection(signal)
     elif strategy in ("ORB LONG", "ORB SHORT"):
         message = _format_orb(signal)
+    elif strategy == "SMA COMPRESSION":
+        message = _format_sma_compression(signal)
     else:
         message = _format_message(signal)
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"

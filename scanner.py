@@ -14,7 +14,7 @@ from config import (
     EARNINGS_BUFFER_DAYS,
 )
 from data_fetcher import fetch_all_timeframes
-from strategy import detect_signal
+from strategy import detect_signal, detect_sma_compression_breakout
 from alerts import send_telegram_alert, send_startup_message
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ SGT = pytz.timezone("Asia/Singapore")
 # ── Alert deduplication ───────────────────────────────────────────────────────
 # Tracks (symbol, timeframe, date) so we alert once per candle day per setup
 _alerted: set[tuple] = set()
+_alerted_compression: set[tuple] = set()
 _last_clear: date | None = None
 
 
@@ -56,6 +57,7 @@ def _clear_old_alerts() -> None:
     today = datetime.now(timezone.utc).date()
     if _last_clear != today:
         _alerted.clear()
+        _alerted_compression.clear()
         _last_clear = today
         log.info("Alert deduplication cache cleared for new day.")
 
@@ -124,17 +126,28 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
             continue
 
         signal = detect_signal(df, symbol, tf_label)
-        if signal is None:
-            continue
+        if signal is not None:
+            log.info(
+                f"  SIGNAL: {symbol} {tf_label} | "
+                f"{signal['strength']} | {signal['pattern']} | "
+                f"R:R {signal['rr']}"
+            )
+            sent = send_telegram_alert(signal)
+            if sent:
+                _mark_alerted(symbol, tf_label)
 
-        log.info(
-            f"  SIGNAL: {symbol} {tf_label} | "
-            f"{signal['strength']} | {signal['pattern']} | "
-            f"R:R {signal['rr']}"
-        )
-        sent = send_telegram_alert(signal)
-        if sent:
-            _mark_alerted(symbol, tf_label)
+        # SMA Compression Breakout — separate dedup
+        compression_key = (_dedup_key(symbol, tf_label), "compression")
+        if compression_key not in _alerted_compression:
+            csignal = detect_sma_compression_breakout(df, symbol, tf_label)
+            if csignal is not None:
+                log.info(
+                    f"  COMPRESSION: {symbol} {tf_label} | "
+                    f"spread {csignal['spread_pct']}% | body {csignal['body_ratio']}x"
+                )
+                sent = send_telegram_alert(csignal)
+                if sent:
+                    _alerted_compression.add(compression_key)
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
