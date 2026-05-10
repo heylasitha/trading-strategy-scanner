@@ -18,7 +18,7 @@ from data_fetcher import fetch_all_timeframes
 from strategy import (
     detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout,
     detect_bearish_signal, detect_death_cross, detect_vwap_rejection,
-    detect_orb_long, detect_orb_short,
+    detect_orb_long, detect_orb_short, detect_sma_compression_breakout,
 )
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
@@ -182,6 +182,20 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                 if send_telegram_alert(rejection_signal):
                     log_signal(rejection_signal)
                     mark_alerted(state, s7_key, "")
+                    alerts_sent += 1
+
+        # ── Strategy 10: SMA Compression Breakout ────────────────────────────
+        s10_key = f"s10_{symbol}_{tf_label}"
+        if not already_alerted(state, s10_key, ""):
+            compression_signal = detect_sma_compression_breakout(df, symbol, tf_label)
+            if compression_signal:
+                log.info(
+                    f"  SMA COMPRESSION: {symbol} {tf_label} | "
+                    f"spread {compression_signal['spread_pct']}% | body {compression_signal['body_ratio']}x"
+                )
+                if send_telegram_alert(compression_signal):
+                    log_signal(compression_signal)
+                    mark_alerted(state, s10_key, "")
                     alerts_sent += 1
 
     # ── Strategy 8/9: ORB — stocks only, 15m only, once per day ─────────────

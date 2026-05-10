@@ -581,7 +581,7 @@ def send_telegram_alert(signal: dict) -> bool:
     try:
         resp = requests.post(url, data=payload, timeout=10)
         if resp.status_code == 200:
-            log.info(f"Alert sent: {signal['symbol']} {signal['timeframe']} [{signal['strength']}]")
+            log.info(f"Alert sent: {signal['symbol']} {signal['timeframe']} [{signal.get('strength', 'SIGNAL')}]")
             return True
         else:
             log.error(f"Telegram error {resp.status_code}: {resp.text}")

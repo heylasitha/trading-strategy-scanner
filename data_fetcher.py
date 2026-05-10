@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import requests
 
+import yfinance as yf
+
 from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, CRYPTO, TIMEFRAMES, MIN_BARS
 
 log = logging.getLogger(__name__)
@@ -77,7 +79,7 @@ def _fetch_alpaca(symbol: str, tf_label: str) -> pd.DataFrame | None:
             "timeframe":  alpaca_tf,
             "limit":      1000,
             "adjustment": "split",
-            "feed":       "delayed_sip",
+            "feed":       "iex",
             "sort":       "asc",
             "start":      start,
         }
@@ -123,6 +125,59 @@ def _fetch_alpaca(symbol: str, tf_label: str) -> pd.DataFrame | None:
     df = df[~df.index.duplicated(keep="last")]
     df.sort_index(inplace=True)
     return df
+
+
+YF_INTERVAL_MAP = {
+    "15m": "15m",
+    "30m": "30m",
+    "1h":  "1h",
+    "2h":  "1h",   # resample from 1h
+    "4h":  "1h",   # resample from 1h
+    "1d":  "1d",
+    "1w":  "1wk",
+}
+
+YF_PERIOD_MAP = {
+    "15m": "60d",
+    "30m": "60d",
+    "1h":  "2y",
+    "2h":  "2y",
+    "4h":  "2y",
+    "1d":  "10y",
+    "1w":  "10y",
+}
+
+RESAMPLE_RULES = {"2h": "2h", "4h": "4h"}
+
+
+def _fetch_yfinance(symbol: str, tf_label: str) -> pd.DataFrame | None:
+    interval = YF_INTERVAL_MAP.get(tf_label)
+    period   = YF_PERIOD_MAP.get(tf_label)
+    if not interval:
+        return None
+    try:
+        df = yf.Ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
+        if df is None or df.empty:
+            return None
+        df.columns = [c.lower() for c in df.columns]
+        df = df[["open", "high", "low", "close", "volume"]].astype(float)
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("UTC")
+        else:
+            df.index = df.index.tz_convert("UTC")
+        if tf_label in RESAMPLE_RULES:
+            rule = RESAMPLE_RULES[tf_label]
+            df = df.resample(rule).agg({
+                "open": "first", "high": "max",
+                "low": "min",   "close": "last", "volume": "sum",
+            }).dropna()
+        df = df[~df.index.duplicated(keep="last")]
+        df.sort_index(inplace=True)
+        df = df.iloc[:-1]   # drop last incomplete candle
+        return df
+    except Exception as e:
+        log.error(f"yfinance fetch failed {symbol} {tf_label}: {e}")
+        return None
 
 
 def _fetch_binance(symbol: str, tf_label: str) -> pd.DataFrame | None:
@@ -180,7 +235,7 @@ def _fetch_binance(symbol: str, tf_label: str) -> pd.DataFrame | None:
 
 
 def fetch_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame | None:
-    df = _fetch_binance(symbol, tf_label) if symbol in CRYPTO else _fetch_alpaca(symbol, tf_label)
+    df = _fetch_binance(symbol, tf_label) if symbol in CRYPTO else _fetch_yfinance(symbol, tf_label)
 
     if df is None or df.empty:
         return None
@@ -189,7 +244,8 @@ def fetch_ohlcv(symbol: str, tf_label: str) -> pd.DataFrame | None:
         return None
 
     last_bar_time = df.index[-1]
-    cutoff = datetime.now(timezone.utc) - timedelta(days=3)
+    staleness_days = {"1d": 5, "1w": 14}.get(tf_label, 3)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=staleness_days)
     if last_bar_time < cutoff:
         log.warning(f"{symbol} {tf_label}: stale data, last bar {last_bar_time.date()} — skipping")
         return None

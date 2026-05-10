@@ -1200,6 +1200,7 @@ def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str
         "timeframe":   tf_label,
         "strategy":    "SMA COMPRESSION",
         "pattern":     "SMA Compression Breakout",
+        "strength":    "HIGH CONVICTION",
         "entry":       round(entry,  6),
         "stop":        round(stop,   6),
         "target":      round(target, 6),
