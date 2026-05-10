@@ -333,28 +333,21 @@ def detect_vwap_bounce(
     Strategy 3 — VWAP Bounce.
 
     Conditions:
-      1. Valid timeframe: stocks 15m/30m/1h only; crypto adds 2h/4h/1d
-      2. Price was above VWAP (uptrend)
-      3. Price pulled back and touched VWAP middle (within 0.5%)
-      4. Confirmation: candle CLOSED above VWAP after touch
-      5. Volume spike on bounce candle (>1.5x avg)
-      6. SMA20 > SMA200 (bigger trend is bullish)
-      7. Only 1st or 2nd touch of session (fresh signal)
-      8. Stocks: skip 11AM–1PM ET (lunch chop)
+      1. Uptrend: price above SMA200
+      2. Previous candle: red (bearish) AND touched VWAP
+      3. Current candle: closed above VWAP (bounce confirmed)
     """
     if mag7 is None:
         mag7 = []
     if crypto_symbols is None:
         crypto_symbols = []
 
-    # Condition 1: Timeframe gate — crypto allows higher TFs, stocks do not
     allowed_tfs = CRYPTO_VWAP_TIMEFRAMES if symbol in crypto_symbols else STOCK_VWAP_TIMEFRAMES
     if tf_label not in allowed_tfs:
         return None
 
     df = add_all_indicators_with_vwap(df)
-    df.dropna(subset=["vwap", "vwap_upper", "vwap_lower",
-                      "sma20", "sma200", "volume_ratio"], inplace=True)
+    df.dropna(subset=["vwap", "sma200"], inplace=True)
 
     if len(df) < 10:
         return None
@@ -362,84 +355,45 @@ def detect_vwap_bounce(
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # Condition 2: Price was above VWAP — check previous candle
-    if prev["close"] <= prev["vwap"]:
+    # 1. Uptrend: price above SMA200
+    if last["close"] <= last["sma200"]:
         return None
 
-    # Condition 3: Last candle touched VWAP (low within tolerance)
-    touched_vwap = (
-        abs(last["low"] - last["vwap"]) / last["vwap"] <= VWAP_TOUCH_TOLERANCE
-        or last["low"] <= last["vwap"] <= last["high"]
-    )
-    if not touched_vwap:
+    # 2. Previous candle touched VWAP
+    if not (prev["low"] <= prev["vwap"] <= prev["high"]):
         return None
 
-    # Condition 4: Candle closed ABOVE VWAP (confirmation — no fake bounce)
+    # 3. Current candle closed above VWAP
     if last["close"] <= last["vwap"]:
         return None
 
-    # Condition 5: Volume spike on bounce candle
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VWAP_VOLUME_MULTIPLIER:
-        return None
-
-    # Condition 6: SMA20 > SMA200 — bigger trend is bullish
-    if last["sma20"] <= last["sma200"]:
-        return None
-
-    # Condition 7: Only 1st or 2nd touch of session
-    touches = _count_vwap_touches(df)
-    if touches > MAX_VWAP_TOUCHES:
-        return None
-
-    # Condition 8: Skip lunch hour for stocks
-    if _is_stock_lunch_hour(tf_label, symbol, mag7):
-        return None
-
     # ── Build trade levels ────────────────────────────────────────────────────
-    entry      = last["close"]
-    stop       = last["vwap_lower"] * 0.99   # Below lower VWAP band
-    target     = last["vwap_upper"]           # Upper VWAP band
-
-    risk = entry - stop
+    entry    = last["close"]
+    stop     = prev["low"] * 0.999
+    risk     = entry - stop
     if risk <= 0:
         return None
 
+    target     = entry + risk * MIN_RR
     rr         = round((target - entry) / risk, 2)
     stop_pct   = round(risk / entry * 100, 2)
     target_pct = round((target - entry) / entry * 100, 2)
 
-    # Minimum R:R check
-    if rr < 1.2:
-        return None
-
-    # Strength
-    if last["volume_ratio"] > 2.0 and touches == 1:
-        strength = "STRONG"
-    elif last["volume_ratio"] > 1.5:
-        strength = "MODERATE"
-    else:
-        strength = "WATCH"
-
     return {
-        "symbol":        symbol,
-        "timeframe":     tf_label,
-        "strategy":      "VWAP BOUNCE",
-        "strength":      strength,
-        "pattern":       f"VWAP touch #{touches} — confirmed bounce",
-        "entry":         round(entry,              6),
-        "stop":          round(stop,               6),
-        "target":        round(target,             6),
-        "rr":            rr,
-        "stop_pct":      stop_pct,
-        "target_pct":    target_pct,
-        "vwap":          round(last["vwap"],       6),
-        "vwap_upper":    round(last["vwap_upper"], 6),
-        "vwap_lower":    round(last["vwap_lower"], 6),
-        "sma20":         round(last["sma20"],      4),
-        "sma200":        round(last["sma200"],     4),
-        "volume_ratio":  round(last["volume_ratio"], 2),
-        "close":         round(last["close"],      4),
-        "touch_number":  touches,
+        "symbol":      symbol,
+        "timeframe":   tf_label,
+        "strategy":    "VWAP BOUNCE",
+        "strength":    "HIGH CONVICTION",
+        "pattern":     "Candle touched VWAP — confirmed bounce",
+        "entry":       round(entry,  6),
+        "stop":        round(stop,   6),
+        "target":      round(target, 6),
+        "rr":          rr,
+        "stop_pct":    stop_pct,
+        "target_pct":  target_pct,
+        "vwap":        round(last["vwap"],   6),
+        "sma200":      round(last["sma200"], 4),
+        "close":       round(last["close"],  4),
     }
 
 
@@ -818,17 +772,12 @@ def detect_vwap_rejection(
     crypto_symbols: list | None = None,
 ) -> dict | None:
     """
-    Strategy 7 — Bearish VWAP Rejection (mirror of VWAP Bounce).
+    Strategy 7 — Bearish VWAP Rejection.
 
     Conditions:
-      1. Valid timeframe (same as VWAP Bounce)
-      2. Price was BELOW VWAP — downtrend established
-      3. Last candle rallied up and TOUCHED VWAP (high within tolerance)
-      4. Candle CLOSED BELOW VWAP — rejection confirmed
-      5. Volume spike (>1.5x avg)
-      6. SMA20 < SMA200 — bigger trend is bearish
-      7. Only 1st or 2nd touch of session
-      8. Stocks: skip 11AM–1PM ET lunch chop
+      1. Downtrend: price below SMA200
+      2. Previous candle touched VWAP
+      3. Current candle closed below VWAP (rejection confirmed)
     """
     if mag7 is None:
         mag7 = []
@@ -840,8 +789,7 @@ def detect_vwap_rejection(
         return None
 
     df = add_all_indicators_with_vwap(df)
-    df.dropna(subset=["vwap", "vwap_upper", "vwap_lower",
-                      "sma20", "sma200", "volume_ratio"], inplace=True)
+    df.dropna(subset=["vwap", "sma200"], inplace=True)
 
     if len(df) < 10:
         return None
@@ -849,81 +797,44 @@ def detect_vwap_rejection(
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # Condition 2: Price was below VWAP previously
-    if prev["close"] >= prev["vwap"]:
+    # 1. Downtrend: price below SMA200
+    if last["close"] >= last["sma200"]:
         return None
 
-    # Condition 3: Last candle touched VWAP from below
-    touched_vwap = (
-        abs(last["high"] - last["vwap"]) / last["vwap"] <= VWAP_TOUCH_TOLERANCE
-        or last["low"] <= last["vwap"] <= last["high"]
-    )
-    if not touched_vwap:
+    # 2. Previous candle touched VWAP
+    if not (prev["low"] <= prev["vwap"] <= prev["high"]):
         return None
 
-    # Condition 4: Closed BELOW VWAP — rejected
+    # 3. Current candle closed below VWAP
     if last["close"] >= last["vwap"]:
         return None
 
-    # Condition 5: Volume spike
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VWAP_VOLUME_MULTIPLIER:
-        return None
-
-    # Condition 6: SMA20 < SMA200 — bigger trend is bearish
-    if last["sma20"] >= last["sma200"]:
-        return None
-
-    # Condition 7: Only 1st or 2nd touch of session
-    touches = _count_vwap_touches(df)
-    if touches > MAX_VWAP_TOUCHES:
-        return None
-
-    # Condition 8: Skip lunch hour for stocks
-    if _is_stock_lunch_hour(tf_label, symbol, mag7):
-        return None
-
     entry  = last["close"]
-    stop   = last["vwap_upper"] * 1.01
-    target = last["vwap_lower"]
-
-    risk = stop - entry
+    stop   = prev["high"] * 1.001
+    risk   = stop - entry
     if risk <= 0:
         return None
 
+    target     = entry - risk * MIN_RR
     rr         = round((entry - target) / risk, 2)
     stop_pct   = round(risk / entry * 100, 2)
     target_pct = round((entry - target) / entry * 100, 2)
 
-    if rr < 1.2:
-        return None
-
-    if last["volume_ratio"] > 2.0 and touches == 1:
-        strength = "STRONG"
-    elif last["volume_ratio"] > 1.5:
-        strength = "MODERATE"
-    else:
-        strength = "WATCH"
-
     return {
-        "symbol":        symbol,
-        "timeframe":     tf_label,
-        "strategy":      "VWAP REJECTION",
-        "strength":      strength,
-        "pattern":       f"VWAP touch #{touches} — rejected down",
-        "entry":         round(entry,              6),
-        "stop":          round(stop,               6),
-        "target":        round(target,             6),
-        "rr":            rr,
-        "stop_pct":      stop_pct,
-        "target_pct":    target_pct,
-        "vwap":          round(last["vwap"],       6),
-        "vwap_upper":    round(last["vwap_upper"], 6),
-        "vwap_lower":    round(last["vwap_lower"], 6),
-        "sma20":         round(last["sma20"],      4),
-        "sma200":        round(last["sma200"],     4),
-        "volume_ratio":  round(last["volume_ratio"], 2),
-        "close":         round(last["close"],      4),
-        "touch_number":  touches,
+        "symbol":      symbol,
+        "timeframe":   tf_label,
+        "strategy":    "VWAP REJECTION",
+        "strength":    "HIGH CONVICTION",
+        "pattern":     "Candle touched VWAP — rejected down",
+        "entry":       round(entry,  6),
+        "stop":        round(stop,   6),
+        "target":      round(target, 6),
+        "rr":          rr,
+        "stop_pct":    stop_pct,
+        "target_pct":  target_pct,
+        "vwap":        round(last["vwap"],   6),
+        "sma200":      round(last["sma200"], 4),
+        "close":       round(last["close"],  4),
     }
 
 

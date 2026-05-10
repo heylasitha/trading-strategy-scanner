@@ -158,10 +158,8 @@ def _format_golden_cross(signal: dict) -> str:
 
 
 def _format_vwap_bounce(signal: dict) -> str:
-    sym      = signal["symbol"]
-    tf       = signal["timeframe"]
-    strength = signal["strength"]
-    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+    sym  = signal["symbol"]
+    tf   = signal["timeframe"]
 
     now_utc  = datetime.now(timezone.utc)
     now_sgt  = now_utc.astimezone(SGT)
@@ -171,32 +169,19 @@ def _format_vwap_bounce(signal: dict) -> str:
         f"{now_et.strftime('%H:%M')} ET"
     )
 
-    entry      = _format_price(signal["entry"],      sym)
-    stop       = _format_price(signal["stop"],       sym)
-    target     = _format_price(signal["target"],     sym)
-    vwap       = _format_price(signal["vwap"],       sym)
-    vwap_upper = _format_price(signal["vwap_upper"], sym)
-    vwap_lower = _format_price(signal["vwap_lower"], sym)
+    entry  = _format_price(signal["entry"],  sym)
+    stop   = _format_price(signal["stop"],   sym)
+    target = _format_price(signal["target"], sym)
+    vwap   = _format_price(signal["vwap"],   sym)
 
     lines = [
-        f"{emoji} 💧 VWAP BOUNCE DETECTED",
+        f"💧 VWAP BOUNCE",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
         f"Asset     : {sym}",
         f"Timeframe : {tf.upper()}",
-        f"Pattern   : {signal['pattern']}",
-        f"Strength  : {strength}",
         f"",
-        f"📊 VWAP Bands:",
-        f"  Upper (+1SD) : {vwap_upper}  🎯 Target",
-        f"  VWAP Middle  : {vwap}   ← Bounce here",
-        f"  Lower (-1SD) : {vwap_lower}  🛑 Stop zone",
-        f"",
-        f"📉 SMA Trend Confirmation:",
-        f"  SMA 20  : {_format_price(signal['sma20'],  sym)}  ✅",
-        f"  SMA 200 : {_format_price(signal['sma200'], sym)}  ✅",
-        f"",
-        f"📦 Volume",
-        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"📊 VWAP : {vwap}  ← Red candle bounced here",
+        f"  SMA200 : {_format_price(signal['sma200'], sym)}  ✅ Uptrend",
         f"",
         f"🎯 Trade Levels",
         f"  Entry   : {entry}",
@@ -206,7 +191,7 @@ def _format_vwap_bounce(signal: dict) -> str:
         f"",
         f"⏰ {time_str}",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"⚠️  Price bounced off VWAP — ride to upper band",
+        f"⚠️  Enter on candle close above VWAP",
     ]
     return "\n".join(lines)
 
@@ -382,10 +367,8 @@ def _format_death_cross(signal: dict) -> str:
 
 
 def _format_vwap_rejection(signal: dict) -> str:
-    sym      = signal["symbol"]
-    tf       = signal["timeframe"]
-    strength = signal["strength"]
-    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+    sym  = signal["symbol"]
+    tf   = signal["timeframe"]
 
     now_utc  = datetime.now(timezone.utc)
     now_sgt  = now_utc.astimezone(SGT)
@@ -395,33 +378,19 @@ def _format_vwap_rejection(signal: dict) -> str:
         f"{now_et.strftime('%H:%M')} ET"
     )
 
-    entry      = _format_price(signal["entry"],      sym)
-    stop       = _format_price(signal["stop"],       sym)
-    target     = _format_price(signal["target"],     sym)
-    vwap       = _format_price(signal["vwap"],       sym)
-    vwap_upper = _format_price(signal["vwap_upper"], sym)
-    vwap_lower = _format_price(signal["vwap_lower"], sym)
+    entry  = _format_price(signal["entry"],  sym)
+    stop   = _format_price(signal["stop"],   sym)
+    target = _format_price(signal["target"], sym)
+    vwap   = _format_price(signal["vwap"],   sym)
 
     lines = [
-        f"{emoji} 🔴 VWAP REJECTION DETECTED",
+        f"🔴 VWAP REJECTION — SHORT",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
         f"Asset     : {sym}",
         f"Timeframe : {tf.upper()}",
-        f"Pattern   : {signal['pattern']}",
-        f"Strength  : {strength}",
-        f"Direction : SHORT 🔴",
         f"",
-        f"📊 VWAP Bands:",
-        f"  Upper (+1SD) : {vwap_upper}  🛑 Stop zone",
-        f"  VWAP Middle  : {vwap}   ← Rejected here",
-        f"  Lower (-1SD) : {vwap_lower}  🎯 Target",
-        f"",
-        f"📉 SMA Trend Confirmation:",
-        f"  SMA 20  : {_format_price(signal['sma20'],  sym)}  ✅",
-        f"  SMA 200 : {_format_price(signal['sma200'], sym)}  ✅",
-        f"",
-        f"📦 Volume",
-        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"📊 VWAP : {vwap}  ← Rejected here",
+        f"  SMA200 : {_format_price(signal['sma200'], sym)}  ✅ Downtrend",
         f"",
         f"🎯 Trade Levels",
         f"  Entry   : {entry}",
@@ -431,7 +400,7 @@ def _format_vwap_rejection(signal: dict) -> str:
         f"",
         f"⏰ {time_str}",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"⚠️  Price rejected VWAP — ride to lower band",
+        f"⚠️  Enter on candle close below VWAP",
     ]
     return "\n".join(lines)
 
