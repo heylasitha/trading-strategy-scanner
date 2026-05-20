@@ -158,10 +158,8 @@ def _format_golden_cross(signal: dict) -> str:
 
 
 def _format_vwap_bounce(signal: dict) -> str:
-    sym      = signal["symbol"]
-    tf       = signal["timeframe"]
-    strength = signal["strength"]
-    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+    sym  = signal["symbol"]
+    tf   = signal["timeframe"]
 
     now_utc  = datetime.now(timezone.utc)
     now_sgt  = now_utc.astimezone(SGT)
@@ -171,32 +169,19 @@ def _format_vwap_bounce(signal: dict) -> str:
         f"{now_et.strftime('%H:%M')} ET"
     )
 
-    entry      = _format_price(signal["entry"],      sym)
-    stop       = _format_price(signal["stop"],       sym)
-    target     = _format_price(signal["target"],     sym)
-    vwap       = _format_price(signal["vwap"],       sym)
-    vwap_upper = _format_price(signal["vwap_upper"], sym)
-    vwap_lower = _format_price(signal["vwap_lower"], sym)
+    entry  = _format_price(signal["entry"],  sym)
+    stop   = _format_price(signal["stop"],   sym)
+    target = _format_price(signal["target"], sym)
+    vwap   = _format_price(signal["vwap"],   sym)
 
     lines = [
-        f"{emoji} 💧 VWAP BOUNCE DETECTED",
+        f"💧 VWAP BOUNCE",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
         f"Asset     : {sym}",
         f"Timeframe : {tf.upper()}",
-        f"Pattern   : {signal['pattern']}",
-        f"Strength  : {strength}",
         f"",
-        f"📊 VWAP Bands:",
-        f"  Upper (+1SD) : {vwap_upper}  🎯 Target",
-        f"  VWAP Middle  : {vwap}   ← Bounce here",
-        f"  Lower (-1SD) : {vwap_lower}  🛑 Stop zone",
-        f"",
-        f"📉 SMA Trend Confirmation:",
-        f"  SMA 20  : {_format_price(signal['sma20'],  sym)}  ✅",
-        f"  SMA 200 : {_format_price(signal['sma200'], sym)}  ✅",
-        f"",
-        f"📦 Volume",
-        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"📊 VWAP : {vwap}  ← Red candle bounced here",
+        f"  SMA200 : {_format_price(signal['sma200'], sym)}  ✅ Uptrend",
         f"",
         f"🎯 Trade Levels",
         f"  Entry   : {entry}",
@@ -206,7 +191,7 @@ def _format_vwap_bounce(signal: dict) -> str:
         f"",
         f"⏰ {time_str}",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"⚠️  Price bounced off VWAP — ride to upper band",
+        f"⚠️  Enter on candle close above VWAP",
     ]
     return "\n".join(lines)
 
@@ -382,10 +367,8 @@ def _format_death_cross(signal: dict) -> str:
 
 
 def _format_vwap_rejection(signal: dict) -> str:
-    sym      = signal["symbol"]
-    tf       = signal["timeframe"]
-    strength = signal["strength"]
-    emoji    = STRENGTH_EMOJI.get(strength, "📊")
+    sym  = signal["symbol"]
+    tf   = signal["timeframe"]
 
     now_utc  = datetime.now(timezone.utc)
     now_sgt  = now_utc.astimezone(SGT)
@@ -395,33 +378,19 @@ def _format_vwap_rejection(signal: dict) -> str:
         f"{now_et.strftime('%H:%M')} ET"
     )
 
-    entry      = _format_price(signal["entry"],      sym)
-    stop       = _format_price(signal["stop"],       sym)
-    target     = _format_price(signal["target"],     sym)
-    vwap       = _format_price(signal["vwap"],       sym)
-    vwap_upper = _format_price(signal["vwap_upper"], sym)
-    vwap_lower = _format_price(signal["vwap_lower"], sym)
+    entry  = _format_price(signal["entry"],  sym)
+    stop   = _format_price(signal["stop"],   sym)
+    target = _format_price(signal["target"], sym)
+    vwap   = _format_price(signal["vwap"],   sym)
 
     lines = [
-        f"{emoji} 🔴 VWAP REJECTION DETECTED",
+        f"🔴 VWAP REJECTION — SHORT",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
         f"Asset     : {sym}",
         f"Timeframe : {tf.upper()}",
-        f"Pattern   : {signal['pattern']}",
-        f"Strength  : {strength}",
-        f"Direction : SHORT 🔴",
         f"",
-        f"📊 VWAP Bands:",
-        f"  Upper (+1SD) : {vwap_upper}  🛑 Stop zone",
-        f"  VWAP Middle  : {vwap}   ← Rejected here",
-        f"  Lower (-1SD) : {vwap_lower}  🎯 Target",
-        f"",
-        f"📉 SMA Trend Confirmation:",
-        f"  SMA 20  : {_format_price(signal['sma20'],  sym)}  ✅",
-        f"  SMA 200 : {_format_price(signal['sma200'], sym)}  ✅",
-        f"",
-        f"📦 Volume",
-        f"  Ratio   : {signal['volume_ratio']:.1f}x avg  ✅",
+        f"📊 VWAP : {vwap}  ← Rejected here",
+        f"  SMA200 : {_format_price(signal['sma200'], sym)}  ✅ Downtrend",
         f"",
         f"🎯 Trade Levels",
         f"  Entry   : {entry}",
@@ -431,7 +400,7 @@ def _format_vwap_rejection(signal: dict) -> str:
         f"",
         f"⏰ {time_str}",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"⚠️  Price rejected VWAP — ride to lower band",
+        f"⚠️  Enter on candle close below VWAP",
     ]
     return "\n".join(lines)
 
@@ -496,6 +465,56 @@ def _format_orb(signal: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_sma_compression(signal: dict) -> str:
+    sym  = signal["symbol"]
+    tf   = signal["timeframe"]
+
+    now_utc  = datetime.now(timezone.utc)
+    now_sgt  = now_utc.astimezone(SGT)
+    now_et   = now_utc.astimezone(ET)
+    time_str = (
+        f"{now_sgt.strftime('%Y-%m-%d %H:%M')} SGT  |  "
+        f"{now_et.strftime('%H:%M')} ET"
+    )
+
+    priority = TF_PRIORITY.get(tf, "📊 SETUP")
+    entry    = _format_price(signal["entry"],  sym)
+    stop     = _format_price(signal["stop"],   sym)
+    target   = _format_price(signal["target"], sym)
+    sma20    = _format_price(signal["sma20"],  sym)
+    sma50    = _format_price(signal["sma50"],  sym)
+    sma200   = _format_price(signal["sma200"], sym)
+    close    = _format_price(signal["close"],  sym)
+
+    lines = [
+        f"🔥 💥 SMA COMPRESSION BREAKOUT",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Asset     : {sym}",
+        f"Timeframe : {tf.upper()}",
+        f"",
+        f"📊 SMA Cluster (Compressed ✅)",
+        f"  SMA 20  : {sma20}",
+        f"  SMA 50  : {sma50}",
+        f"  SMA 200 : {sma200}",
+        f"  Spread  : {signal['spread_pct']}%",
+        f"  Price   : {close}",
+        f"",
+        f"🕯 Breakout Candle",
+        f"  Body    : {signal['body_ratio']}x avg  ✅ Strong engulf",
+        f"",
+        f"🎯 Trade Levels",
+        f"  Entry   : {entry}",
+        f"  Stop    : {stop}  (-{signal['stop_pct']}%)",
+        f"  Target  : {target}  (+{signal['target_pct']}%)",
+        f"  R:R     : {signal['rr']} : 1",
+        f"",
+        f"⏰ {time_str}",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"⚠️  Confirm on candle close before entry",
+    ]
+    return "\n".join(lines)
+
+
 def send_telegram_alert(signal: dict) -> bool:
     """Format and send a Telegram message. Returns True on success."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -517,6 +536,8 @@ def send_telegram_alert(signal: dict) -> bool:
         message = _format_vwap_rejection(signal)
     elif strategy in ("ORB LONG", "ORB SHORT"):
         message = _format_orb(signal)
+    elif strategy == "SMA COMPRESSION":
+        message = _format_sma_compression(signal)
     else:
         message = _format_message(signal)
     url     = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -529,7 +550,7 @@ def send_telegram_alert(signal: dict) -> bool:
     try:
         resp = requests.post(url, data=payload, timeout=10)
         if resp.status_code == 200:
-            log.info(f"Alert sent: {signal['symbol']} {signal['timeframe']} [{signal['strength']}]")
+            log.info(f"Alert sent: {signal['symbol']} {signal['timeframe']} [{signal.get('strength', 'SIGNAL')}]")
             return True
         else:
             log.error(f"Telegram error {resp.status_code}: {resp.text}")

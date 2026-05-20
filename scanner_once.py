@@ -18,7 +18,7 @@ from data_fetcher import fetch_all_timeframes
 from strategy import (
     detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout,
     detect_bearish_signal, detect_death_cross, detect_vwap_rejection,
-    detect_orb_long, detect_orb_short,
+    detect_orb_long, detect_orb_short, detect_sma_compression_breakout,
 )
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
@@ -104,18 +104,7 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
         if df is None:
             continue
 
-        # ── Strategy 1: SMA Momentum ─────────────────────────────────────
-        s1_key = f"s1_{symbol}_{tf_label}"
-        if not already_alerted(state, s1_key, ""):
-            signal = detect_signal(df, symbol, tf_label)
-            if signal:
-                log.info(f"  S1 SIGNAL: {symbol} {tf_label} | {signal['strength']} | {signal['pattern']}")
-                if send_telegram_alert(signal):
-                    log_signal(signal)
-                    mark_alerted(state, s1_key, "")
-                    alerts_sent += 1
-            else:
-                log.info(f"  {symbol} {tf_label}: no S1 signal")
+        # S1 disabled — late entries, replaced by S10 SMA compression
 
         # ── Strategy 2: Golden Cross ──────────────────────────────────────
         s2_key = f"s2_{symbol}_{tf_label}"
@@ -149,18 +138,7 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                     mark_alerted(state, s4_key, "")
                     alerts_sent += 1
 
-        # ── Strategy 5: Bearish SMA Stack ────────────────────────────────────
-        s5_key = f"s5_{symbol}_{tf_label}"
-        if not already_alerted(state, s5_key, ""):
-            bear_signal = detect_bearish_signal(df, symbol, tf_label)
-            if bear_signal:
-                log.info(f"  BEARISH SMA: {symbol} {tf_label} | {bear_signal['strength']} | {bear_signal['pattern']}")
-                if send_telegram_alert(bear_signal):
-                    log_signal(bear_signal)
-                    mark_alerted(state, s5_key, "")
-                    alerts_sent += 1
-            else:
-                log.info(f"  {symbol} {tf_label}: no S5 signal")
+        # S5 disabled — late entries, replaced by S7 VWAP rejection
 
         # ── Strategy 6: Death Cross ───────────────────────────────────────────
         s6_key = f"s6_{symbol}_{tf_label}"
@@ -182,6 +160,20 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                 if send_telegram_alert(rejection_signal):
                     log_signal(rejection_signal)
                     mark_alerted(state, s7_key, "")
+                    alerts_sent += 1
+
+        # ── Strategy 10: SMA Compression Breakout ────────────────────────────
+        s10_key = f"s10_{symbol}_{tf_label}"
+        if not already_alerted(state, s10_key, ""):
+            compression_signal = detect_sma_compression_breakout(df, symbol, tf_label)
+            if compression_signal:
+                log.info(
+                    f"  SMA COMPRESSION: {symbol} {tf_label} | "
+                    f"spread {compression_signal['spread_pct']}% | body {compression_signal['body_ratio']}x"
+                )
+                if send_telegram_alert(compression_signal):
+                    log_signal(compression_signal)
+                    mark_alerted(state, s10_key, "")
                     alerts_sent += 1
 
     # ── Strategy 8/9: ORB — stocks only, 15m only, once per day ─────────────
