@@ -1039,15 +1039,14 @@ def detect_orb_short(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | Non
 
 def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
     """
-    Fires when all 3 SMAs are compressed within 3% of each other and a
-    strong bullish engulfing candle breaks above the entire SMA cluster.
+    Fires when all 3 SMAs are compressed and a strong candle breaks above the cluster.
 
     Conditions:
-      1. SMA20, SMA50, SMA200 spread <= 3%  (compression)
-      2. Current candle open <= top of SMA cluster (started inside/below)
-      3. Current candle close > all 3 SMAs  (broke above cluster)
-      4. Current candle is bullish (close > open)
-      5. Current candle body > average body of last 3 candles (strong move)
+      1. PREVIOUS candle: SMA20/50/200 spread <= threshold (compression before breakout)
+      2. Current candle opened inside or below the previous cluster (2% tolerance)
+      3. Current candle closed above all 3 SMAs
+      4. Current candle is bullish
+      5. Current candle body >= 1.5x average of prior 3 candles (strong breakout)
     """
     df = add_all_indicators(df)
     df.dropna(subset=["sma20", "sma50", "sma200"], inplace=True)
@@ -1056,27 +1055,33 @@ def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str
         return None
 
     last = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    sma20  = last["sma20"]
-    sma50  = last["sma50"]
-    sma200 = last["sma200"]
+    # Use PREVIOUS candle's SMAs for compression — current candle's close
+    # already pulls SMA20 up, making compression look worse than it was
+    sma20_p  = prev["sma20"]
+    sma50_p  = prev["sma50"]
+    sma200_p = prev["sma200"]
 
-    sma_max = max(sma20, sma50, sma200)
-    sma_min = min(sma20, sma50, sma200)
+    sma_max_p = max(sma20_p, sma50_p, sma200_p)
+    sma_min_p = min(sma20_p, sma50_p, sma200_p)
 
-    if sma_min <= 0:
+    if sma_min_p <= 0:
         return None
 
-    # 1. SMA compression
-    spread = (sma_max - sma_min) / sma_min
+    # 1. SMA compression on previous candle
+    spread = (sma_max_p - sma_min_p) / sma_min_p
     if spread > SMA_COMPRESSION_THRESHOLD:
         return None
 
-    # 2. Candle opened inside or below SMA cluster
-    if last["open"] > sma_max * 1.005:
+    # 2. Current candle opened inside or near the cluster
+    if last["open"] > sma_max_p * 1.02:
         return None
 
-    # 3. Candle closed above all 3 SMAs
+    # 3. Current candle closed above all 3 SMAs (current values)
+    sma20  = last["sma20"]
+    sma50  = last["sma50"]
+    sma200 = last["sma200"]
     if not (last["close"] > sma20 and last["close"] > sma50 and last["close"] > sma200):
         return None
 
@@ -1084,19 +1089,19 @@ def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str
     if last["close"] <= last["open"]:
         return None
 
-    # 5. Strong body vs recent average
+    # 5. Strong body — at least 1.5x recent average
     recent_bodies = [
         abs(df.iloc[i]["close"] - df.iloc[i]["open"])
         for i in range(-4, -1)
     ]
     avg_body     = sum(recent_bodies) / len(recent_bodies)
     current_body = last["close"] - last["open"]
-    if avg_body <= 0 or current_body <= avg_body:
+    if avg_body <= 0 or current_body < avg_body * 1.5:
         return None
 
-    # Calculate trade levels
+    # Calculate trade levels — stop below the compressed cluster
     entry = last["close"]
-    stop  = sma_min * 0.98
+    stop  = sma_min_p * 0.98
     risk  = entry - stop
     if risk <= 0:
         return None
@@ -1112,15 +1117,15 @@ def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str
         "strategy":    "SMA COMPRESSION",
         "pattern":     "SMA Compression Breakout",
         "strength":    "HIGH CONVICTION",
-        "entry":       round(entry,  6),
-        "stop":        round(stop,   6),
-        "target":      round(target, 6),
+        "entry":       round(entry,   6),
+        "stop":        round(stop,    6),
+        "target":      round(target,  6),
         "rr":          rr,
         "stop_pct":    stop_pct,
         "target_pct":  target_pct,
-        "sma20":       round(sma20,  6),
-        "sma50":       round(sma50,  6),
-        "sma200":      round(sma200, 6),
+        "sma20":       round(sma20_p, 6),
+        "sma50":       round(sma50_p, 6),
+        "sma200":      round(sma200_p, 6),
         "spread_pct":  round(spread * 100, 2),
         "body_ratio":  round(current_body / avg_body, 2),
         "close":       round(last["close"], 6),
