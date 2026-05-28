@@ -46,7 +46,7 @@ VWAP_VOLUME_MULTIPLIER = 1.5  # For VWAP strategies (S3/S4/S7) — reversal need
 
 # ── Signal Filter ─────────────────────────────────────────────────────────────
 MIN_RR                   = 2.0   # Minimum Risk:Reward ratio
-SMA_COMPRESSION_THRESHOLD = 0.08  # Max spread between SMA20/50/200 (8%)
+SMA_COMPRESSION_THRESHOLD = 0.10  # Max spread between SMA20/50/200 (10%)
 MIN_BARS         = 215       # Minimum bars needed for SMA200 + buffer
 EARNINGS_BUFFER_DAYS = 5     # Skip Mag7 trades within 5 days of earnings
 
