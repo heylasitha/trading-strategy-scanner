@@ -106,61 +106,66 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
 
         # S1 disabled — late entries, replaced by S10 SMA compression
 
-        # ── Strategy 2: Golden Cross ──────────────────────────────────────
-        s2_key = f"s2_{symbol}_{tf_label}"
-        if not already_alerted(state, s2_key, ""):
-            gc_signal = detect_golden_cross(df, symbol, tf_label)
-            if gc_signal:
-                log.info(f"  GOLDEN CROSS: {symbol} {tf_label} | {gc_signal['strength']}")
-                if send_telegram_alert(gc_signal):
-                    log_signal(gc_signal)
-                    mark_alerted(state, s2_key, "")
-                    alerts_sent += 1
+        # ── Strategy 2: Golden Cross — 1d and 1w only ────────────────────
+        if tf_label in ("1d", "1w"):
+            s2_key = f"s2_{symbol}_{tf_label}"
+            if not already_alerted(state, s2_key, ""):
+                gc_signal = detect_golden_cross(df, symbol, tf_label)
+                if gc_signal:
+                    log.info(f"  GOLDEN CROSS: {symbol} {tf_label} | {gc_signal['strength']}")
+                    if send_telegram_alert(gc_signal):
+                        log_signal(gc_signal)
+                        mark_alerted(state, s2_key, "")
+                        alerts_sent += 1
 
-        # ── Strategy 3: VWAP Bounce ───────────────────────────────────────
-        s3_key = f"s3_{symbol}_{tf_label}"
-        if not already_alerted(state, s3_key, ""):
-            vwap_signal = detect_vwap_bounce(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
-            if vwap_signal:
-                log.info(f"  VWAP BOUNCE: {symbol} {tf_label} | {vwap_signal['strength']}")
-                if send_telegram_alert(vwap_signal):
-                    log_signal(vwap_signal)
-                    mark_alerted(state, s3_key, "")
-                    alerts_sent += 1
+        # ── Strategy 3: VWAP Bounce — stocks, 15m and 1h only ────────────
+        if is_stock and tf_label in ("15m", "1h"):
+            s3_key = f"s3_{symbol}_{tf_label}"
+            if not already_alerted(state, s3_key, ""):
+                vwap_signal = detect_vwap_bounce(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
+                if vwap_signal:
+                    log.info(f"  VWAP BOUNCE: {symbol} {tf_label} | {vwap_signal['strength']}")
+                    if send_telegram_alert(vwap_signal):
+                        log_signal(vwap_signal)
+                        mark_alerted(state, s3_key, "")
+                        alerts_sent += 1
 
-        # ── Strategy 4: VWAP Fakeout Reversal (Telegram only — no Sheets yet) ──
-        s4_key = f"s4_{symbol}_{tf_label}"
-        if not already_alerted(state, s4_key, ""):
-            fakeout_signal = detect_vwap_fakeout(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
-            if fakeout_signal:
-                log.info(f"  VWAP FAKEOUT: {symbol} {tf_label} | {fakeout_signal['strength']}")
-                if send_telegram_alert(fakeout_signal):
-                    mark_alerted(state, s4_key, "")
-                    alerts_sent += 1
+        # ── Strategy 4: VWAP Fakeout — stocks, 15m and 1h only ───────────
+        if is_stock and tf_label in ("15m", "1h"):
+            s4_key = f"s4_{symbol}_{tf_label}"
+            if not already_alerted(state, s4_key, ""):
+                fakeout_signal = detect_vwap_fakeout(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
+                if fakeout_signal:
+                    log.info(f"  VWAP FAKEOUT: {symbol} {tf_label} | {fakeout_signal['strength']}")
+                    if send_telegram_alert(fakeout_signal):
+                        mark_alerted(state, s4_key, "")
+                        alerts_sent += 1
 
         # S5 disabled — late entries, replaced by S7 VWAP rejection
 
-        # ── Strategy 6: Death Cross ───────────────────────────────────────────
-        s6_key = f"s6_{symbol}_{tf_label}"
-        if not already_alerted(state, s6_key, ""):
-            dc_signal = detect_death_cross(df, symbol, tf_label)
-            if dc_signal:
-                log.info(f"  DEATH CROSS: {symbol} {tf_label} | {dc_signal['strength']}")
-                if send_telegram_alert(dc_signal):
-                    log_signal(dc_signal)
-                    mark_alerted(state, s6_key, "")
-                    alerts_sent += 1
+        # ── Strategy 6: Death Cross — 1d and 1w only ─────────────────────
+        if tf_label in ("1d", "1w"):
+            s6_key = f"s6_{symbol}_{tf_label}"
+            if not already_alerted(state, s6_key, ""):
+                dc_signal = detect_death_cross(df, symbol, tf_label)
+                if dc_signal:
+                    log.info(f"  DEATH CROSS: {symbol} {tf_label} | {dc_signal['strength']}")
+                    if send_telegram_alert(dc_signal):
+                        log_signal(dc_signal)
+                        mark_alerted(state, s6_key, "")
+                        alerts_sent += 1
 
-        # ── Strategy 7: Bearish VWAP Rejection ───────────────────────────────
-        s7_key = f"s7_{symbol}_{tf_label}"
-        if not already_alerted(state, s7_key, ""):
-            rejection_signal = detect_vwap_rejection(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
-            if rejection_signal:
-                log.info(f"  VWAP REJECTION: {symbol} {tf_label} | {rejection_signal['strength']}")
-                if send_telegram_alert(rejection_signal):
-                    log_signal(rejection_signal)
-                    mark_alerted(state, s7_key, "")
-                    alerts_sent += 1
+        # ── Strategy 7: VWAP Rejection — stocks, 15m and 1h only ─────────
+        if is_stock and tf_label in ("15m", "1h"):
+            s7_key = f"s7_{symbol}_{tf_label}"
+            if not already_alerted(state, s7_key, ""):
+                rejection_signal = detect_vwap_rejection(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
+                if rejection_signal:
+                    log.info(f"  VWAP REJECTION: {symbol} {tf_label} | {rejection_signal['strength']}")
+                    if send_telegram_alert(rejection_signal):
+                        log_signal(rejection_signal)
+                        mark_alerted(state, s7_key, "")
+                        alerts_sent += 1
 
         # ── Strategy 10: SMA Compression Breakout ────────────────────────────
         s10_key = f"s10_{symbol}_{tf_label}"
