@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: '*/5 * * * *'   # Every 5 minutes, 24/7
   workflow_dispatch:          # Manual trigger from GitHub UI
+  push:
+    branches: [main]
 
 permissions:
   contents: write             # Needed to commit state.json back
