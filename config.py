@@ -13,7 +13,7 @@ ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
 
 # ── Assets ────────────────────────────────────────────────────────────────────
 MAG7 = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"]
-EXTRA_STOCKS = ["VOO", "QQQM", "TSM", "AMD", "SPY", "QQQ", "AVGO", "COIN"]
+EXTRA_STOCKS = ["VOO", "QQQM", "TSM", "AMD", "SPY", "AVGO", "COIN"]
 CRYPTO = ["BTC-USD", "ETH-USD", "LTC-USD"]
 ALL_SYMBOLS = MAG7 + EXTRA_STOCKS + CRYPTO
 
