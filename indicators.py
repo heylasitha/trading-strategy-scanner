@@ -87,6 +87,18 @@ def add_volume_ratio(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """Average True Range — measures per-bar volatility for dynamic stop sizing."""
+    prev_close = df["close"].shift(1)
+    tr = pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - prev_close).abs(),
+        (df["low"]  - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    df["atr"] = tr.rolling(period).mean()
+    return df
+
+
 def add_vwap(df: pd.DataFrame) -> pd.DataFrame:
     """
     VWAP with +1/-1 Standard Deviation bands.
@@ -121,6 +133,7 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = add_rsi(df)
     df = add_adx(df)
     df = add_volume_ratio(df)
+    df = add_atr(df)
     return df
 
 
@@ -130,5 +143,6 @@ def add_all_indicators_with_vwap(df: pd.DataFrame) -> pd.DataFrame:
     df = add_rsi(df)
     df = add_adx(df)
     df = add_volume_ratio(df)
+    df = add_atr(df)
     df = add_vwap(df)
     return df

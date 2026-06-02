@@ -466,8 +466,13 @@ def _format_orb(signal: dict) -> str:
 
 
 def _format_sma_compression(signal: dict) -> str:
-    sym  = signal["symbol"]
-    tf   = signal["timeframe"]
+    sym        = signal["symbol"]
+    tf         = signal["timeframe"]
+    conviction = signal.get("strength", "STANDARD")
+    structure  = signal.get("structure_label", signal.get("structure", ""))
+    shakeout   = signal.get("shakeout", False)
+    vol_ok     = signal.get("vol_contracting", False)
+    rr_mult    = signal.get("rr_multiplier", 2.0)
 
     now_utc  = datetime.now(timezone.utc)
     now_sgt  = now_utc.astimezone(SGT)
@@ -477,20 +482,28 @@ def _format_sma_compression(signal: dict) -> str:
         f"{now_et.strftime('%H:%M')} ET"
     )
 
-    priority = TF_PRIORITY.get(tf, "📊 SETUP")
-    entry    = _format_price(signal["entry"],  sym)
-    stop     = _format_price(signal["stop"],   sym)
-    target   = _format_price(signal["target"], sym)
-    sma20    = _format_price(signal["sma20"],  sym)
-    sma50    = _format_price(signal["sma50"],  sym)
-    sma200   = _format_price(signal["sma200"], sym)
-    close    = _format_price(signal["close"],  sym)
+    # Conviction header
+    conviction_header = {
+        "EXTREME":        "💎 EXTREME COMPRESSION BREAKOUT",
+        "HIGH CONVICTION": "🔥 HIGH CONVICTION BREAKOUT",
+        "STANDARD":       "📊 SMA COMPRESSION BREAKOUT",
+    }.get(conviction, "📊 SMA COMPRESSION BREAKOUT")
+
+    entry  = _format_price(signal["entry"],  sym)
+    stop   = _format_price(signal["stop"],   sym)
+    target = _format_price(signal["target"], sym)
+    sma20  = _format_price(signal["sma20"],  sym)
+    sma50  = _format_price(signal["sma50"],  sym)
+    sma200 = _format_price(signal["sma200"], sym)
+    close  = _format_price(signal["close"],  sym)
 
     lines = [
-        f"🔥 💥 SMA COMPRESSION BREAKOUT",
+        f"{conviction_header}",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
         f"Asset     : {sym}",
         f"Timeframe : {tf.upper()}",
+        f"Structure : {structure}",
+        f"Conviction: {conviction}",
         f"",
         f"📊 SMA Cluster (Compressed ✅)",
         f"  SMA 20  : {sma20}",
@@ -500,17 +513,25 @@ def _format_sma_compression(signal: dict) -> str:
         f"  Price   : {close}",
         f"",
         f"🕯 Breakout Candle",
-        f"  Body    : {signal['body_ratio']}x avg  ✅ Strong engulf",
+        f"  Body    : {signal['body_ratio']}x avg  ✅",
+        f"  Volume  : {signal.get('volume_ratio', 0):.1f}x avg  ✅",
+        f"  Vol base: {'Contracting ✅' if vol_ok else 'Normal'}",
+        f"  Shakeout: {'Confirmed 💎 +1 tier' if shakeout else 'Not seen'}",
         f"",
-        f"🎯 Trade Levels",
+        f"🎯 Trade Levels  (Target = {int(rr_mult)}R)",
         f"  Entry   : {entry}",
         f"  Stop    : {stop}  (-{signal['stop_pct']}%)",
         f"  Target  : {target}  (+{signal['target_pct']}%)",
         f"  R:R     : {signal['rr']} : 1",
         f"",
+        f"📋 Exit Plan",
+        f"  +1R → Move stop to breakeven",
+        f"  +{int(rr_mult//2)}R → Exit 50%, let rest run",
+        f"  +{int(rr_mult)}R → Full target",
+        f"",
         f"⏰ {time_str}",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"⚠️  Confirm on candle close before entry",
+        f"⚠️  Enter on candle close — no pullback expected",
     ]
     return "\n".join(lines)
 

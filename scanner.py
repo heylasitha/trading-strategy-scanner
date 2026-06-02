@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 
+import pandas as pd
 import pytz
 
 from config import (
@@ -12,10 +13,12 @@ from config import (
     MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE,
     MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE,
     EARNINGS_BUFFER_DAYS,
+    SIGNAL_COOLDOWN_HOURS,
 )
 from data_fetcher import fetch_all_timeframes
-from strategy import detect_signal, detect_sma_compression_breakout
+from strategy import detect_signal, detect_sma_compression_breakout, detect_bearish_signal, detect_death_cross
 from alerts import send_telegram_alert, send_startup_message
+from sheets_logger import log_signal
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -32,10 +35,13 @@ ET  = pytz.timezone("US/Eastern")
 SGT = pytz.timezone("Asia/Singapore")
 
 # ── Alert deduplication ───────────────────────────────────────────────────────
-# Tracks (symbol, timeframe, date) so we alert once per candle day per setup
 _alerted: set[tuple] = set()
 _alerted_compression: set[tuple] = set()
 _last_clear: date | None = None
+
+# ── 24-hour signal cooldown per asset per direction ───────────────────────────
+# Prevents same asset firing multiple times in same direction (e.g. 3× BTC long)
+_signal_cooldown: dict[tuple, datetime] = {}
 
 
 def _dedup_key(symbol: str, tf: str) -> tuple:
@@ -51,6 +57,19 @@ def _mark_alerted(symbol: str, tf: str) -> None:
     _alerted.add(_dedup_key(symbol, tf))
 
 
+def _is_in_cooldown(symbol: str, direction: str = "long") -> bool:
+    """Returns True if this asset+direction fired a signal within the cooldown window."""
+    key       = (symbol, direction)
+    last_time = _signal_cooldown.get(key)
+    if last_time is None:
+        return False
+    return (datetime.now(timezone.utc) - last_time) < timedelta(hours=SIGNAL_COOLDOWN_HOURS)
+
+
+def _mark_cooldown(symbol: str, direction: str = "long") -> None:
+    _signal_cooldown[(symbol, direction)] = datetime.now(timezone.utc)
+
+
 def _clear_old_alerts() -> None:
     """Clear yesterday's alerts daily."""
     global _last_clear
@@ -60,6 +79,25 @@ def _clear_old_alerts() -> None:
         _alerted_compression.clear()
         _last_clear = today
         log.info("Alert deduplication cache cleared for new day.")
+
+
+# ── Higher timeframe trend filter ─────────────────────────────────────────────
+
+def _is_higher_tf_bullish(tf_data: dict) -> bool:
+    """
+    Returns True if 4H or Daily chart is in a bullish trend (close > SMA50).
+    Blocks long signals when the macro trend is against us.
+    If neither timeframe has enough data — allow the signal (don't block).
+    """
+    checked = False
+    for tf in ("4h", "1d"):
+        df = tf_data.get(tf)
+        if df is not None and len(df) >= 52:
+            checked = True
+            sma50 = df["close"].rolling(50).mean().iloc[-1]
+            if not pd.isna(sma50) and float(df["close"].iloc[-1]) > float(sma50):
+                return True   # at least one higher TF is bullish — allow
+    return not checked        # no data = don't block; all checked = bearish = block
 
 
 # ── Market hours ──────────────────────────────────────────────────────────────
@@ -117,37 +155,76 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
     log.info(f"Scanning {symbol} ...")
     tf_data = fetch_all_timeframes(symbol)
 
+    # Higher timeframe trend — used to block compression longs in macro downtrend
+    macro_bullish = _is_higher_tf_bullish(tf_data)
+    if not macro_bullish:
+        log.info(f"  {symbol}: 4H/1D trend bearish — skipping long compression signals")
+
     for tf_label, _, _, _ in TIMEFRAMES:
         df = tf_data.get(tf_label)
         if df is None:
             continue
 
-        if _already_alerted(symbol, tf_label):
+        # ── Long strategies (VWAP, Golden Cross, etc.) ───────────────────────
+        if not _already_alerted(symbol, tf_label):
+            if macro_bullish:
+                signal = detect_signal(df, symbol, tf_label)
+                if signal is not None:
+                    log.info(
+                        f"  SIGNAL: {symbol} {tf_label} | "
+                        f"{signal['strength']} | {signal['pattern']} | "
+                        f"R:R {signal['rr']}"
+                    )
+                    sent = send_telegram_alert(signal)
+                    if sent:
+                        _mark_alerted(symbol, tf_label)
+                        log_signal(signal)
+
+            # ── Short strategies — fire when macro is bearish (ALL assets) ────
+            if not macro_bullish:
+                short_key = (_dedup_key(symbol, tf_label), "short")
+                if short_key not in _alerted_compression:
+                    ssignal = detect_bearish_signal(df, symbol, tf_label)
+                    if ssignal is None:
+                        ssignal = detect_death_cross(df, symbol, tf_label)
+                    if ssignal is not None:
+                        log.info(
+                            f"  SHORT SIGNAL: {symbol} {tf_label} | "
+                            f"{ssignal['strength']} | {ssignal['pattern']} | "
+                            f"R:R {ssignal['rr']}"
+                        )
+                        sent = send_telegram_alert(ssignal)
+                        if sent:
+                            _alerted_compression.add(short_key)
+                            _mark_cooldown(symbol, "short")
+                            log_signal(ssignal)
+
+        # ── SMA Compression Breakout (long only) ─────────────────────────────
+        compression_key = (_dedup_key(symbol, tf_label), "compression")
+        if compression_key in _alerted_compression:
             continue
 
-        signal = detect_signal(df, symbol, tf_label)
-        if signal is not None:
-            log.info(
-                f"  SIGNAL: {symbol} {tf_label} | "
-                f"{signal['strength']} | {signal['pattern']} | "
-                f"R:R {signal['rr']}"
-            )
-            sent = send_telegram_alert(signal)
-            if sent:
-                _mark_alerted(symbol, tf_label)
+        # Block compression longs if macro trend is bearish
+        if not macro_bullish:
+            continue
 
-        # SMA Compression Breakout — separate dedup
-        compression_key = (_dedup_key(symbol, tf_label), "compression")
-        if compression_key not in _alerted_compression:
-            csignal = detect_sma_compression_breakout(df, symbol, tf_label)
-            if csignal is not None:
-                log.info(
-                    f"  COMPRESSION: {symbol} {tf_label} | "
-                    f"spread {csignal['spread_pct']}% | body {csignal['body_ratio']}x"
-                )
-                sent = send_telegram_alert(csignal)
-                if sent:
-                    _alerted_compression.add(compression_key)
+        # Block if same asset fired a long signal in the last 24 hours
+        if _is_in_cooldown(symbol, "long"):
+            log.info(f"  {symbol} {tf_label}: in 24h cooldown — skipping compression")
+            continue
+
+        csignal = detect_sma_compression_breakout(df, symbol, tf_label)
+        if csignal is not None:
+            log.info(
+                f"  COMPRESSION: {symbol} {tf_label} | "
+                f"{csignal['strength']} | {csignal['structure']} | "
+                f"spread {csignal['spread_pct']}% | R:R {csignal['rr']}"
+            )
+            sent = send_telegram_alert(csignal)
+            if sent:
+                _alerted_compression.add(compression_key)
+                _mark_cooldown(symbol, "long")   # start 24h cooldown
+                log_signal(csignal)
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────

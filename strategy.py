@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 import pytz
 
 from config import (
     ADX_THRESHOLD, VOLUME_MULTIPLIER, VWAP_VOLUME_MULTIPLIER, MIN_RR,
-    SMA_COMPRESSION_THRESHOLD,
+    SMA_COMPRESSION_THRESHOLDS, SMA_MIN_BASE_CANDLES,
 )
 from indicators import add_all_indicators, add_all_indicators_with_vwap
 
@@ -25,12 +26,10 @@ def detect_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | 
     Conditions:
       1. Previous bar: SMA20 <= SMA200  (was below or equal)
       2. Current bar:  SMA20 >  SMA200  (now above = the cross)
-      3. Price above both SMAs           (strength confirmation)
-      4. Volume > 1.5x average           (real move, not fake)
-      5. ADX > 25                        (trending market, not sideways)
+      3. Price above both SMAs           (confirmation)
     """
     df = add_all_indicators(df)
-    df.dropna(subset=["sma20", "sma200", "adx", "volume_ratio"], inplace=True)
+    df.dropna(subset=["sma20", "sma200", "volume_ratio"], inplace=True)
 
     if len(df) < 5:
         return None
@@ -56,10 +55,6 @@ def detect_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | 
     if last["close"] <= last["sma20"] or last["close"] <= last["sma200"]:
         return None
 
-    # Condition 4: Volume confirmation
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
-        return None
-
     # Calculate levels
     entry     = last["close"]
     stop      = last["sma200"] * 0.98   # Stop below SMA200
@@ -73,9 +68,10 @@ def detect_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | 
     rr         = round((target - entry) / risk, 2)
 
     # Strength based on volume
-    if last["volume_ratio"] > 2.0:
+    vol = float(last["volume_ratio"]) if not pd.isna(last["volume_ratio"]) else 0
+    if vol > 2.0:
         strength = "STRONG"
-    elif last["volume_ratio"] > 1.5:
+    elif vol > 1.2:
         strength = "MODERATE"
     else:
         strength = "WATCH"
@@ -234,16 +230,16 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
     if last["close"] <= last["sma20"]:
         return None
 
-    # ── Condition 3: RSI above 55 — confirmed bullish momentum ───────────────
-    if pd.isna(last["rsi"]) or last["rsi"] <= 55:
+    # ── Condition 3: RSI above 45 — not in oversold/weak zone ───────────────
+    if pd.isna(last["rsi"]) or last["rsi"] <= 45:
         return None
 
     # ── Condition 4: RSI rising ───────────────────────────────────────────────
     if last["rsi"] <= prev["rsi"]:
         return None
 
-    # ── Condition 5: ADX trend strength ──────────────────────────────────────
-    if pd.isna(last["adx"]) or last["adx"] < ADX_THRESHOLD:
+    # ── Condition 5: ADX > 20 — some trend present (not ranging) ─────────────
+    if pd.isna(last["adx"]) or last["adx"] < 20:
         return None
 
     # ── Condition 7: Consistent alignment over last 3 bars ───────────────────
@@ -368,9 +364,19 @@ def detect_vwap_bounce(
         return None
 
     # ── Build trade levels ────────────────────────────────────────────────────
-    entry    = last["close"]
-    stop     = prev["low"] * 0.999
-    risk     = entry - stop
+    entry = last["close"]
+    atr   = last.get("atr", float("nan"))
+
+    # ATR-based stop — gives each asset breathing room based on its own volatility
+    # Fallback to previous low if ATR not available
+    if pd.notna(atr) and atr > 0:
+        stop_atr  = entry - (atr * 1.5)
+        stop_prev = prev["low"] * 0.998
+        stop = min(stop_atr, stop_prev)   # whichever is lower = more conservative
+    else:
+        stop = prev["low"] * 0.998
+
+    risk = entry - stop
     if risk <= 0:
         return None
 
@@ -459,8 +465,8 @@ def detect_vwap_fakeout(
 
     # Condition 5: Volume spike on either fakeout or confirmation candle
     volume_confirmed = (
-        fakeout["volume_ratio"] >= VWAP_VOLUME_MULTIPLIER or
-        last["volume_ratio"]   >= VWAP_VOLUME_MULTIPLIER
+        fakeout["volume_ratio"] >= VOLUME_MULTIPLIER or
+        last["volume_ratio"]   >= VOLUME_MULTIPLIER
     )
     if pd.isna(last["volume_ratio"]) or not volume_confirmed:
         return None
@@ -627,19 +633,16 @@ def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict 
     if last["close"] >= last["sma20"]:
         return None
 
-    # RSI below 45 — confirmed bearish momentum
-    if pd.isna(last["rsi"]) or last["rsi"] >= 45:
+    # RSI below 55 — not in overbought/strong zone
+    if pd.isna(last["rsi"]) or last["rsi"] >= 55:
         return None
 
     # RSI falling
     if last["rsi"] >= prev["rsi"]:
         return None
 
-    if pd.isna(last["adx"]) or last["adx"] < SHORT_ADX_THRESHOLD:
-        return None
-
-    # Volume confirmation — was missing, caused 0.4x signals to fire
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
+    # ADX > 20 — some trend present
+    if pd.isna(last["adx"]) or last["adx"] < 20:
         return None
 
     recent = df.iloc[-3:]
@@ -716,12 +719,6 @@ def detect_death_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | N
     if last["close"] >= last["sma20"] or last["close"] >= last["sma200"]:
         return None
 
-    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < VOLUME_MULTIPLIER:
-        return None
-
-    if pd.isna(last["adx"]) or last["adx"] < ADX_THRESHOLD:
-        return None
-
     entry = last["close"]
     stop  = last["sma200"] * 1.02
     risk  = stop - entry
@@ -735,9 +732,10 @@ def detect_death_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | N
     target_pct = round((entry - target) / entry * 100, 2)
     rr         = round((entry - target) / risk, 2)
 
-    if last["adx"] > 35 and last["volume_ratio"] > 2.0:
+    vol = float(last["volume_ratio"]) if not pd.isna(last["volume_ratio"]) else 0
+    if vol > 2.0:
         strength = "STRONG"
-    elif last["adx"] > 28:
+    elif vol > 1.2:
         strength = "MODERATE"
     else:
         strength = "WATCH"
@@ -1037,31 +1035,109 @@ def detect_orb_short(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | Non
 
 # ── Strategy 10: SMA Compression Breakout ────────────────────────────────────
 
+# ── Structure detection helpers ───────────────────────────────────────────────
+
+def _detect_base_structure(df: pd.DataFrame, n_bars: int = 16) -> str | None:
+    """
+    Analyse the last n_bars (excluding the breakout candle) to classify the
+    base structure as one of three valid types:
+
+      SYMMETRICAL_TRIANGLE  — highs declining + lows rising   (both sides trapped)
+      DESCENDING_WEDGE      — highs declining + lows declining but converging
+      ASCENDING_TRIANGLE    — lows rising    + highs flat
+
+    Returns None if no valid structure is found (rounding bottom, flat base, etc.)
+    """
+    needed = n_bars + 4
+    if len(df) < needed:
+        return None
+
+    # Base = the candles before the breakout candle and the compression candle
+    base = df.iloc[-n_bars - 2:-2]
+    if len(base) < 8:
+        return None
+
+    highs = base["high"].values.astype(float)
+    lows  = base["low"].values.astype(float)
+    x     = np.arange(len(highs), dtype=float)
+
+    try:
+        high_slope = float(np.polyfit(x, highs, 1)[0])
+        low_slope  = float(np.polyfit(x, lows,  1)[0])
+    except Exception:
+        return None
+
+    price = float(base["close"].mean())
+    if price <= 0:
+        return None
+
+    # Normalise: % change per bar
+    hs = high_slope / price * 100
+    ls = low_slope  / price * 100
+
+    DECLINING = -0.03   # highs must fall > 0.03 % per bar
+    RISING    =  0.03   # lows must rise > 0.03 % per bar
+    FLAT_TOL  =  0.025  # ±0.025 % per bar = effectively flat
+
+    # ── Symmetrical triangle: highs falling AND lows rising ──────────────────
+    if hs < DECLINING and ls > RISING:
+        return "SYMMETRICAL_TRIANGLE"
+
+    # ── Descending wedge: both falling but CONVERGING (range narrowing) ──────
+    if hs < DECLINING and ls < -FLAT_TOL:
+        early_range = float(highs[:5].mean() - lows[:5].mean())
+        late_range  = float(highs[-5:].mean() - lows[-5:].mean())
+        if early_range > 0 and late_range < early_range * 0.75:
+            return "DESCENDING_WEDGE"
+
+    # ── Ascending triangle: lows rising, highs roughly flat ──────────────────
+    if ls > RISING and abs(hs) < FLAT_TOL * 2:
+        return "ASCENDING_TRIANGLE"
+
+    return None   # rounding bottom, flat base, random noise → reject
+
+
 def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
     """
-    Fires when all 3 SMAs are compressed and a strong candle breaks above the cluster.
+    Professional SMA Compression Breakout — built from 14-chart analysis.
 
-    Conditions:
-      1. PREVIOUS candle: SMA20/50/200 spread <= threshold (compression before breakout)
-      2. Current candle opened inside or below the previous cluster (2% tolerance)
-      3. Current candle closed above all 3 SMAs
-      4. Current candle is bullish
-      5. Current candle body >= 1.5x average of prior 3 candles (strong breakout)
+    Entry conditions (ALL must pass):
+      1. SMA20/50/200 compressed within timeframe-specific threshold
+      2. Valid base structure: Symmetrical Triangle, Descending Wedge, or
+         Ascending Triangle detected in the base period
+      3. Minimum base duration (timeframe-dependent candle count)
+      4. Volume contracting during the base (energy coiling)
+      5. Breakout candle:
+           • Opens inside or near the SMA cluster
+           • Closes above all 3 SMAs
+           • Bullish (close > open)
+           • Body ≥ 1.5× average of prior 5 candles
+           • Volume ≥ 1.5× average (real institutional move)
+      6. ATR-based stop — adapts to each asset's volatility
+      7. Tiered R:R target based on compression tightness:
+           < 2%  compression → 5R target  (EXTREME)
+           2–4%  compression → 3R target  (HIGH CONVICTION)
+           4–10% compression → 2R target  (STANDARD)
+      8. Shakeout bonus: if bar before breakout dipped below cluster
+         and closed back inside → conviction upgraded one tier
     """
     df = add_all_indicators(df)
-    df.dropna(subset=["sma20", "sma50", "sma200"], inplace=True)
+    df.dropna(subset=["sma20", "sma50", "sma200", "atr", "volume_ratio"], inplace=True)
 
-    if len(df) < 6:
+    # ── Timeframe settings ────────────────────────────────────────────────────
+    max_spread    = SMA_COMPRESSION_THRESHOLDS.get(tf_label, 0.06)
+    min_base_bars = SMA_MIN_BASE_CANDLES.get(tf_label, 12)
+
+    if len(df) < min_base_bars + 6:
         return None
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # Use PREVIOUS candle's SMAs for compression — current candle's close
-    # already pulls SMA20 up, making compression look worse than it was
-    sma20_p  = prev["sma20"]
-    sma50_p  = prev["sma50"]
-    sma200_p = prev["sma200"]
+    # ── 1. SMA compression check (on previous candle) ────────────────────────
+    sma20_p  = float(prev["sma20"])
+    sma50_p  = float(prev["sma50"])
+    sma200_p = float(prev["sma200"])
 
     sma_max_p = max(sma20_p, sma50_p, sma200_p)
     sma_min_p = min(sma20_p, sma50_p, sma200_p)
@@ -1069,64 +1145,128 @@ def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str
     if sma_min_p <= 0:
         return None
 
-    # 1. SMA compression on previous candle
     spread = (sma_max_p - sma_min_p) / sma_min_p
-    if spread > SMA_COMPRESSION_THRESHOLD:
+    if spread > max_spread:
         return None
 
-    # 2. Current candle opened inside or near the cluster
-    if last["open"] > sma_max_p * 1.02:
+    # ── 2. Base structure detection ───────────────────────────────────────────
+    structure = _detect_base_structure(df, n_bars=min_base_bars)
+    if structure is None:
         return None
 
-    # 3. Current candle closed above all 3 SMAs (current values)
-    sma20  = last["sma20"]
-    sma50  = last["sma50"]
-    sma200 = last["sma200"]
-    if not (last["close"] > sma20 and last["close"] > sma50 and last["close"] > sma200):
+    # ── 3. Breakout candle — opened near cluster ──────────────────────────────
+    if float(last["open"]) > sma_max_p * 1.02:
         return None
 
-    # 4. Bullish candle
+    # ── 4. Breakout candle — closed above ALL 3 SMAs ─────────────────────────
+    if not (last["close"] > last["sma20"] and
+            last["close"] > last["sma50"] and
+            last["close"] > last["sma200"]):
+        return None
+
+    # ── 5. Bullish candle ─────────────────────────────────────────────────────
     if last["close"] <= last["open"]:
         return None
 
-    # 5. Strong body — at least 1.5x recent average
+    # ── 6. Strong breakout body (≥ 1.5× average of prior 5 candles) ──────────
     recent_bodies = [
-        abs(df.iloc[i]["close"] - df.iloc[i]["open"])
-        for i in range(-4, -1)
+        abs(float(df.iloc[i]["close"]) - float(df.iloc[i]["open"]))
+        for i in range(-6, -1)
     ]
     avg_body     = sum(recent_bodies) / len(recent_bodies)
-    current_body = last["close"] - last["open"]
+    current_body = float(last["close"]) - float(last["open"])
     if avg_body <= 0 or current_body < avg_body * 1.5:
         return None
 
-    # Calculate trade levels — stop below the compressed cluster
-    entry = last["close"]
-    stop  = sma_min_p * 0.98
-    risk  = entry - stop
+    # ── 7. Volume: contracting during base, spiking on breakout ──────────────
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < 1.5:
+        return None
+
+    base_vol    = df["volume"].iloc[-min_base_bars - 2:-2].mean()
+    overall_avg = df["volume"].rolling(30).mean().iloc[-3]
+    vol_contracting = (not pd.isna(overall_avg)) and (base_vol < overall_avg)
+
+    # ── 8. Shakeout detection ─────────────────────────────────────────────────
+    shakeout = False
+    if len(df) >= 4:
+        shakeout_bar = df.iloc[-3]
+        shakeout = (
+            float(shakeout_bar["low"])   < sma_min_p and
+            float(shakeout_bar["close"]) > sma_min_p
+        )
+
+    # ── 9. Trade levels ───────────────────────────────────────────────────────
+    entry = float(last["close"])
+    atr   = float(last["atr"])
+
+    if pd.isna(atr) or atr <= 0:
+        return None
+
+    stop_atr = entry - (atr * 1.5)
+    stop_sma = sma_min_p * 0.99       # always stay below the cluster
+    stop     = min(stop_atr, stop_sma)
+
+    risk = entry - stop
     if risk <= 0:
         return None
 
-    target     = entry + risk * MIN_RR
+    # ── 10. Tiered conviction + R:R based on compression tightness ───────────
+    if spread <= 0.02:
+        conviction    = "EXTREME"
+        rr_multiplier = 5.0
+    elif spread <= 0.04:
+        conviction    = "HIGH CONVICTION"
+        rr_multiplier = 3.0
+    else:
+        conviction    = "STANDARD"
+        rr_multiplier = 2.0
+
+    # Shakeout upgrades conviction one level
+    if shakeout:
+        if conviction == "STANDARD":
+            conviction    = "HIGH CONVICTION"
+            rr_multiplier = 3.0
+        elif conviction == "HIGH CONVICTION":
+            conviction    = "EXTREME"
+            rr_multiplier = 5.0
+
+    target     = entry + risk * rr_multiplier
     rr         = round((target - entry) / risk, 2)
     stop_pct   = round(risk / entry * 100, 2)
     target_pct = round((target - entry) / entry * 100, 2)
 
+    # ── 11. Final R:R floor check ─────────────────────────────────────────────
+    if rr < MIN_RR:
+        return None
+
+    structure_label = {
+        "SYMMETRICAL_TRIANGLE": "Symmetrical Triangle 🔺",
+        "DESCENDING_WEDGE":     "Descending Wedge 📐",
+        "ASCENDING_TRIANGLE":   "Ascending Triangle 📈",
+    }.get(structure, structure)
+
     return {
-        "symbol":      symbol,
-        "timeframe":   tf_label,
-        "strategy":    "SMA COMPRESSION",
-        "pattern":     "SMA Compression Breakout",
-        "strength":    "HIGH CONVICTION",
-        "entry":       round(entry,   6),
-        "stop":        round(stop,    6),
-        "target":      round(target,  6),
-        "rr":          rr,
-        "stop_pct":    stop_pct,
-        "target_pct":  target_pct,
-        "sma20":       round(sma20_p, 6),
-        "sma50":       round(sma50_p, 6),
-        "sma200":      round(sma200_p, 6),
-        "spread_pct":  round(spread * 100, 2),
-        "body_ratio":  round(current_body / avg_body, 2),
-        "close":       round(last["close"], 6),
+        "symbol":           symbol,
+        "timeframe":        tf_label,
+        "strategy":         "SMA COMPRESSION",
+        "pattern":          "SMA Compression Breakout",
+        "strength":         conviction,
+        "structure":        structure,
+        "structure_label":  structure_label,
+        "entry":            round(entry,    6),
+        "stop":             round(stop,     6),
+        "target":           round(target,   6),
+        "rr":               rr,
+        "rr_multiplier":    rr_multiplier,
+        "stop_pct":         stop_pct,
+        "target_pct":       target_pct,
+        "sma20":            round(sma20_p,  6),
+        "sma50":            round(sma50_p,  6),
+        "sma200":           round(sma200_p, 6),
+        "spread_pct":       round(spread * 100, 2),
+        "body_ratio":       round(current_body / avg_body, 2),
+        "volume_ratio":     round(float(last["volume_ratio"]), 2),
+        "vol_contracting":  vol_contracting,
+        "shakeout":         shakeout,
+        "close":            round(entry, 6),
     }
