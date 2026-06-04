@@ -19,8 +19,6 @@ ALL_SYMBOLS = MAG7 + EXTRA_STOCKS + CRYPTO
 
 # ── Timeframes ────────────────────────────────────────────────────────────────
 TIMEFRAMES = [
-    ("15m", None, None, None),
-    ("30m", None, None, None),
     ("1h",  None, None, None),
     ("2h",  None, None, None),
     ("4h",  None, None, None),

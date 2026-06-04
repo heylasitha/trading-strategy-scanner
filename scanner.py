@@ -180,24 +180,7 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
                         _mark_alerted(symbol, tf_label)
                         log_signal(signal)
 
-            # ── Short strategies — fire when macro is bearish (ALL assets) ────
-            if not macro_bullish:
-                short_key = (_dedup_key(symbol, tf_label), "short")
-                if short_key not in _alerted_compression:
-                    ssignal = detect_bearish_signal(df, symbol, tf_label)
-                    if ssignal is None:
-                        ssignal = detect_death_cross(df, symbol, tf_label)
-                    if ssignal is not None:
-                        log.info(
-                            f"  SHORT SIGNAL: {symbol} {tf_label} | "
-                            f"{ssignal['strength']} | {ssignal['pattern']} | "
-                            f"R:R {ssignal['rr']}"
-                        )
-                        sent = send_telegram_alert(ssignal)
-                        if sent:
-                            _alerted_compression.add(short_key)
-                            _mark_cooldown(symbol, "short")
-                            log_signal(ssignal)
+            # SHORT strategies disabled — validated 49.4% WR vs 83.3% for LONG 1H/2H/4H
 
         # ── SMA Compression Breakout (long only) ─────────────────────────────
         compression_key = (_dedup_key(symbol, tf_label), "compression")
