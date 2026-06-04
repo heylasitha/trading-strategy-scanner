@@ -235,7 +235,7 @@ def run_checker() -> None:
         ws.update_cell(sheet_row, COL_NOTES,  notes)
         log.info(f"  → {new_result}  {notes}")
         updated += 1
-        time.sleep(0.5)  # avoid rate limit
+        time.sleep(3.0)  # avoid rate limit
 
     log.info(f"=== Done. Updated {updated} trades ===")
 
