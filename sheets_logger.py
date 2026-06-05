@@ -58,6 +58,22 @@ def _get_sheet(client: gspread.Client) -> gspread.Worksheet | None:
         return None
 
 
+def _is_duplicate(ws: gspread.Worksheet, symbol: str, timeframe: str, entry: float) -> bool:
+    """Return True if same symbol+timeframe+entry already logged in last 48h rows."""
+    try:
+        rows = ws.get_all_values()
+        for row in rows[1:]:  # skip header
+            if len(row) < 9:
+                continue
+            if (row[1].strip() == symbol and
+                row[2].strip().upper() == timeframe.upper() and
+                row[6].strip() == str(entry)):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def log_signal(signal: dict) -> None:
     """Append one signal row to the Google Sheet."""
     client = _get_client()
@@ -65,6 +81,11 @@ def log_signal(signal: dict) -> None:
         return
     ws = _get_sheet(client)
     if ws is None:
+        return
+
+    # Duplicate guard — skip if identical signal already logged
+    if _is_duplicate(ws, signal.get("symbol",""), signal.get("timeframe",""), signal.get("entry","")):
+        log.info(f"Duplicate suppressed: {signal.get('symbol')} {signal.get('timeframe')} entry={signal.get('entry')}")
         return
 
     now_sgt  = datetime.now(timezone.utc).astimezone(SGT)

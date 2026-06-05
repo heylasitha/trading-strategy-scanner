@@ -165,8 +165,11 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
         if df is None:
             continue
 
-        # ── Long strategies (VWAP, Golden Cross, etc.) ───────────────────────
-        if not _already_alerted(symbol, tf_label):
+        # ── Long strategies: SMA MOMENTUM on 1H + 2H only ───────────────────
+        # 4H removed — validated 36.8% WR vs 85% for 2H / 68% for 1H
+        if tf_label not in ("1h", "2h"):
+            pass  # skip SMA MOMENTUM signal for this TF (still used for trend filter)
+        elif not _already_alerted(symbol, tf_label):
             if macro_bullish:
                 signal = detect_signal(df, symbol, tf_label)
                 if signal is not None:
@@ -182,32 +185,9 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
 
             # SHORT strategies disabled — validated 49.4% WR vs 83.3% for LONG 1H/2H/4H
 
-        # ── SMA Compression Breakout (long only) ─────────────────────────────
-        compression_key = (_dedup_key(symbol, tf_label), "compression")
-        if compression_key in _alerted_compression:
-            continue
-
-        # Block compression longs if macro trend is bearish
-        if not macro_bullish:
-            continue
-
-        # Block if same asset fired a long signal in the last 24 hours
-        if _is_in_cooldown(symbol, "long"):
-            log.info(f"  {symbol} {tf_label}: in 24h cooldown — skipping compression")
-            continue
-
-        csignal = detect_sma_compression_breakout(df, symbol, tf_label)
-        if csignal is not None:
-            log.info(
-                f"  COMPRESSION: {symbol} {tf_label} | "
-                f"{csignal['strength']} | {csignal['structure']} | "
-                f"spread {csignal['spread_pct']}% | R:R {csignal['rr']}"
-            )
-            sent = send_telegram_alert(csignal)
-            if sent:
-                _alerted_compression.add(compression_key)
-                _mark_cooldown(symbol, "long")   # start 24h cooldown
-                log_signal(csignal)
+        # ── SMA Compression Breakout — DISABLED ──────────────────────────────
+        # Validated 35.3% WR from 250 real trades (33% at 15M, 28% at 30M, 50% at 1H)
+        # Insufficient edge — removed 2026-06-05
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
