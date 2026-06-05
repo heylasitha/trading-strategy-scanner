@@ -8,7 +8,7 @@ import pandas as pd
 import pytz
 
 from config import (
-    MAG7, CRYPTO, TIMEFRAMES,
+    MAG7, CHIPS, AI_SOFTWARE, CRYPTO, TIMEFRAMES,
     SCAN_INTERVAL_SECONDS,
     MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE,
     MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE,
@@ -118,7 +118,7 @@ def _near_earnings(symbol: str) -> bool:
     Check if symbol has earnings within EARNINGS_BUFFER_DAYS.
     Uses yfinance calendar data. Returns False on any error (safe default).
     """
-    if symbol not in MAG7:
+    if symbol not in MAG7 + CHIPS + AI_SOFTWARE:
         return False
     try:
         import yfinance as yf
@@ -195,7 +195,7 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
 def run_scanner() -> None:
     log.info("=" * 60)
     log.info("Trading Strategy Scanner — Starting")
-    log.info(f"Assets  : {MAG7 + CRYPTO}")
+    log.info(f"Assets  : {MAG7 + CHIPS + AI_SOFTWARE + CRYPTO}")
     log.info(f"Strategy: SMA 20/50/200 + Stochastic + Volume + ADX")
     log.info(f"Interval: every {SCAN_INTERVAL_SECONDS}s")
     log.info("=" * 60)
@@ -210,7 +210,7 @@ def run_scanner() -> None:
         now_sgt = datetime.now(timezone.utc).astimezone(SGT)
         log.info(f"--- Scan #{scan_number} | {now_sgt.strftime('%Y-%m-%d %H:%M')} SGT ---")
 
-        for symbol in MAG7:
+        for symbol in MAG7 + CHIPS + AI_SOFTWARE:
             try:
                 scan_symbol(symbol, is_stock=True)
             except Exception as e:
