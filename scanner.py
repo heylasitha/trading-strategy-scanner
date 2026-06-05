@@ -13,7 +13,6 @@ from config import (
     MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE,
     MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE,
     EARNINGS_BUFFER_DAYS,
-    SIGNAL_COOLDOWN_HOURS,
 )
 from data_fetcher import fetch_all_timeframes
 from strategy import detect_signal, detect_sma_compression_breakout, detect_bearish_signal, detect_death_cross
@@ -39,9 +38,14 @@ _alerted: set[tuple] = set()
 _alerted_compression: set[tuple] = set()
 _last_clear: date | None = None
 
-# ── 24-hour signal cooldown per asset per direction ───────────────────────────
-# Prevents same asset firing multiple times in same direction (e.g. 3× BTC long)
-_signal_cooldown: dict[tuple, datetime] = {}
+# ── Signal cooldown removed 2026-06-05 ───────────────────────────────────────
+# Fixed 24H time-based cooldown was blocking valid re-entries in strong trends
+# (e.g. AAPL passed all filters 10 days straight — zero signals sent)
+# Spam protection now handled by:
+#   1. sheets_logger duplicate guard (same entry price = blocked)
+#   2. Daily dedup cache _alerted (same symbol+TF+day = one Telegram alert max)
+#   3. ADX > 25 + SMA20>50>200 filters (quality control)
+_signal_cooldown: dict[tuple, datetime] = {}  # kept for reference, no longer used
 
 
 def _dedup_key(symbol: str, tf: str) -> tuple:
