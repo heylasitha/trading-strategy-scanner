@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytz
 
-from config import MAG7, EXTRA_STOCKS, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
+from config import MAG7, CHIPS, AI_SOFTWARE, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
 from strategy import (
     detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout,
@@ -225,7 +225,7 @@ def main() -> None:
 
     total_alerts = 0
 
-    for symbol in MAG7 + EXTRA_STOCKS:
+    for symbol in MAG7 + CHIPS + AI_SOFTWARE:
         try:
             total_alerts += scan_symbol(symbol, is_stock=True, state=state)
         except Exception as e:
