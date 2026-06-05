@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone, date
 
 import pandas as pd
 import pytz
@@ -61,17 +61,8 @@ def _mark_alerted(symbol: str, tf: str) -> None:
     _alerted.add(_dedup_key(symbol, tf))
 
 
-def _is_in_cooldown(symbol: str, direction: str = "long") -> bool:
-    """Returns True if this asset+direction fired a signal within the cooldown window."""
-    key       = (symbol, direction)
-    last_time = _signal_cooldown.get(key)
-    if last_time is None:
-        return False
-    return (datetime.now(timezone.utc) - last_time) < timedelta(hours=SIGNAL_COOLDOWN_HOURS)
-
-
-def _mark_cooldown(symbol: str, direction: str = "long") -> None:
-    _signal_cooldown[(symbol, direction)] = datetime.now(timezone.utc)
+# _is_in_cooldown and _mark_cooldown removed 2026-06-05
+# Cooldown replaced by: sheets_logger duplicate guard + daily _alerted cache
 
 
 def _clear_old_alerts() -> None:
