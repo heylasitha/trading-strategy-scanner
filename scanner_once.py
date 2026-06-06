@@ -15,11 +15,7 @@ import pytz
 
 from config import MAG7, CHIPS, AI_SOFTWARE, CRYPTO, TIMEFRAMES, EARNINGS_BUFFER_DAYS
 from data_fetcher import fetch_all_timeframes
-from strategy import (
-    detect_signal, detect_golden_cross, detect_vwap_bounce, detect_vwap_fakeout,
-    detect_bearish_signal, detect_death_cross, detect_vwap_rejection,
-    detect_orb_long, detect_orb_short, detect_sma_compression_breakout,
-)
+from strategy import detect_signal
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
 
@@ -104,106 +100,22 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
         if df is None:
             continue
 
-        # S1 disabled — late entries, replaced by S10 SMA compression
+        # ── SMA MOMENTUM — 1H and 2H only ────────────────────────────────
+        if tf_label not in ("1h", "2h"):
+            continue
 
-        # ── Strategy 2: Golden Cross — 1d and 1w only ────────────────────
-        if tf_label in ("1d", "1w"):
-            s2_key = f"s2_{symbol}_{tf_label}"
-            if not already_alerted(state, s2_key, ""):
-                gc_signal = detect_golden_cross(df, symbol, tf_label)
-                if gc_signal:
-                    log.info(f"  GOLDEN CROSS: {symbol} {tf_label} | {gc_signal['strength']}")
-                    if send_telegram_alert(gc_signal):
-                        log_signal(gc_signal)
-                        mark_alerted(state, s2_key, "")
-                        alerts_sent += 1
-
-        # ── Strategy 3: VWAP Bounce — stocks, 15m and 1h only ────────────
-        if is_stock and tf_label in ("15m", "1h"):
-            s3_key = f"s3_{symbol}_{tf_label}"
-            if not already_alerted(state, s3_key, ""):
-                vwap_signal = detect_vwap_bounce(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
-                if vwap_signal:
-                    log.info(f"  VWAP BOUNCE: {symbol} {tf_label} | {vwap_signal['strength']}")
-                    if send_telegram_alert(vwap_signal):
-                        log_signal(vwap_signal)
-                        mark_alerted(state, s3_key, "")
-                        alerts_sent += 1
-
-        # ── Strategy 4: VWAP Fakeout — stocks, 15m and 1h only ───────────
-        if is_stock and tf_label in ("15m", "1h"):
-            s4_key = f"s4_{symbol}_{tf_label}"
-            if not already_alerted(state, s4_key, ""):
-                fakeout_signal = detect_vwap_fakeout(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
-                if fakeout_signal:
-                    log.info(f"  VWAP FAKEOUT: {symbol} {tf_label} | {fakeout_signal['strength']}")
-                    if send_telegram_alert(fakeout_signal):
-                        mark_alerted(state, s4_key, "")
-                        alerts_sent += 1
-
-        # S5 disabled — late entries, replaced by S7 VWAP rejection
-
-        # ── Strategy 6: Death Cross — 1d and 1w only ─────────────────────
-        if tf_label in ("1d", "1w"):
-            s6_key = f"s6_{symbol}_{tf_label}"
-            if not already_alerted(state, s6_key, ""):
-                dc_signal = detect_death_cross(df, symbol, tf_label)
-                if dc_signal:
-                    log.info(f"  DEATH CROSS: {symbol} {tf_label} | {dc_signal['strength']}")
-                    if send_telegram_alert(dc_signal):
-                        log_signal(dc_signal)
-                        mark_alerted(state, s6_key, "")
-                        alerts_sent += 1
-
-        # ── Strategy 7: VWAP Rejection — stocks, 15m and 1h only ─────────
-        if is_stock and tf_label in ("15m", "1h"):
-            s7_key = f"s7_{symbol}_{tf_label}"
-            if not already_alerted(state, s7_key, ""):
-                rejection_signal = detect_vwap_rejection(df, symbol, tf_label, mag7=MAG7, crypto_symbols=CRYPTO)
-                if rejection_signal:
-                    log.info(f"  VWAP REJECTION: {symbol} {tf_label} | {rejection_signal['strength']}")
-                    if send_telegram_alert(rejection_signal):
-                        log_signal(rejection_signal)
-                        mark_alerted(state, s7_key, "")
-                        alerts_sent += 1
-
-        # ── Strategy 10: SMA Compression Breakout ────────────────────────────
-        s10_key = f"s10_{symbol}_{tf_label}"
-        if not already_alerted(state, s10_key, ""):
-            compression_signal = detect_sma_compression_breakout(df, symbol, tf_label)
-            if compression_signal:
+        key = f"sma_{symbol}_{tf_label}"
+        if not already_alerted(state, key, ""):
+            signal = detect_signal(df, symbol, tf_label)
+            if signal:
                 log.info(
-                    f"  SMA COMPRESSION: {symbol} {tf_label} | "
-                    f"spread {compression_signal['spread_pct']}% | body {compression_signal['body_ratio']}x"
+                    f"  SIGNAL: {symbol} {tf_label} | "
+                    f"{signal['strength']} | {signal['pattern']} | R:R {signal['rr']}"
                 )
-                if send_telegram_alert(compression_signal):
-                    log_signal(compression_signal)
-                    mark_alerted(state, s10_key, "")
+                if send_telegram_alert(signal):
+                    log_signal(signal)
+                    mark_alerted(state, key, "")
                     alerts_sent += 1
-
-    # ── Strategy 8/9: ORB — stocks only, 15m only, once per day ─────────────
-    if is_stock:
-        orb_df = tf_data.get("15m")
-        if orb_df is not None:
-            s8_key = f"s8_{symbol}"
-            if not already_alerted(state, s8_key, ""):
-                orb_long = detect_orb_long(orb_df, symbol, "15m")
-                if orb_long:
-                    log.info(f"  ORB LONG: {symbol} | {orb_long['strength']}")
-                    if send_telegram_alert(orb_long):
-                        log_signal(orb_long)
-                        mark_alerted(state, s8_key, "")
-                        alerts_sent += 1
-
-            s9_key = f"s9_{symbol}"
-            if not already_alerted(state, s9_key, ""):
-                orb_short = detect_orb_short(orb_df, symbol, "15m")
-                if orb_short:
-                    log.info(f"  ORB SHORT: {symbol} | {orb_short['strength']}")
-                    if send_telegram_alert(orb_short):
-                        log_signal(orb_short)
-                        mark_alerted(state, s9_key, "")
-                        alerts_sent += 1
 
     return alerts_sent
 
