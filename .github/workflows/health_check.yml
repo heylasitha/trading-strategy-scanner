@@ -2,7 +2,8 @@ name: Pre-Market Health Check
 
 on:
   schedule:
-    - cron: '0 13 * * 1-5'   # 1:00 PM UTC = 9:00 AM ET, every weekday (30 min before open)
+    - cron: '0 13 * * 1-5'   # 1:00 PM UTC = 9:00 AM ET, Mon–Fri (30 min before market open)
+    - cron: '0 13 * * 0'     # 1:00 PM UTC = 9:00 PM SGT, Sunday (prep check before Monday open)
   workflow_dispatch:           # Manual trigger anytime
 
 jobs:
