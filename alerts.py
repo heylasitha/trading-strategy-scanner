@@ -97,8 +97,20 @@ def _format_message(signal: dict) -> str:
         f"",
         f"⏰ {time_str}",
         f"━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"⚠️  Confirm on candle close before entry",
     ]
+
+    # Execution status
+    if signal.get("executed") is True:
+        qty = signal.get("qty", "?")
+        order_id = signal.get("order_id", "")
+        lines.append(f"🤖 AUTO-EXECUTED on Alpaca paper")
+        lines.append(f"   Qty: {qty} shares  |  $500 risk")
+        if order_id:
+            lines.append(f"   Order ID: {order_id[:8]}...")
+    elif signal.get("executed") is False:
+        lines.append(f"❌ ORDER FAILED — check Alpaca paper account")
+    else:
+        lines.append(f"⚠️  Confirm on candle close before entry")
 
     return "\n".join(lines)
 

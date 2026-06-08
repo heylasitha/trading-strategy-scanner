@@ -18,6 +18,7 @@ from data_fetcher import fetch_all_timeframes
 from strategy import detect_signal
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
+from trader import place_bracket_order, calculate_qty
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -112,6 +113,21 @@ def scan_symbol(symbol: str, is_stock: bool, state: dict) -> int:
                     f"  SIGNAL: {symbol} {tf_label} | "
                     f"{signal['strength']} | {signal['pattern']} | R:R {signal['rr']}"
                 )
+                # ── Auto-execute on Alpaca paper trading ──────────────────
+                entry  = signal["entry"]
+                stop   = signal["stop"]
+                target = signal["target"]
+                qty    = calculate_qty(entry, risk_dollars=500)
+                order  = place_bracket_order(symbol, qty, entry, stop, target)
+                if order:
+                    signal["order_id"] = order.get("id", "")
+                    signal["qty"]      = qty
+                    signal["executed"] = True
+                    log.info(f"  ✅ Order placed: {symbol} x{qty} entry=${entry:.2f} stop=${stop:.2f} target=${target:.2f}")
+                else:
+                    signal["executed"] = False
+                    log.error(f"  ❌ Order FAILED for {symbol}")
+
                 if send_telegram_alert(signal):
                     log_signal(signal)
                     mark_alerted(state, key, "")
