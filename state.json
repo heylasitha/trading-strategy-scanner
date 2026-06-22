@@ -214,15 +214,16 @@
   "_startup_2026-06-15": "sent",
   "_startup_2026-06-16": "sent",
   "sma_MRVL_1h": "2026-06-19",
-  "sma_TSM_1h": "2026-06-19",
+  "sma_TSM_1h": "2026-06-22",
   "_startup_2026-06-17": "sent",
   "sma_BTC-USD_2h": "2026-06-21",
   "_startup_2026-06-18": "sent",
   "sma_AMD_1h": "2026-06-18",
-  "sma_AMD_2h": "2026-06-18",
+  "sma_AMD_2h": "2026-06-22",
   "_startup_2026-06-19": "sent",
   "_startup_2026-06-20": "sent",
   "_startup_2026-06-21": "sent",
   "sma_ETH-USD_2h": "2026-06-22",
-  "_startup_2026-06-22": "sent"
+  "_startup_2026-06-22": "sent",
+  "sma_TSM_2h": "2026-06-22"
 }
