@@ -243,5 +243,8 @@
   "_startup_2026-07-06": "sent",
   "_startup_2026-07-07": "sent",
   "_startup_2026-07-08": "sent",
-  "_startup_2026-07-09": "sent"
+  "_startup_2026-07-09": "sent",
+  "sma_AAPL_1h": "2026-07-09",
+  "sma_AAPL_2h": "2026-07-09",
+  "sma_META_1h": "2026-07-09"
 }
