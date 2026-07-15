@@ -209,7 +209,7 @@
   "_startup_2026-06-12": "sent",
   "sma_BTC-USD_1h": "2026-07-11",
   "_startup_2026-06-13": "sent",
-  "sma_ETH-USD_1h": "2026-07-14",
+  "sma_ETH-USD_1h": "2026-07-15",
   "_startup_2026-06-14": "sent",
   "_startup_2026-06-15": "sent",
   "_startup_2026-06-16": "sent",
@@ -252,5 +252,6 @@
   "_startup_2026-07-12": "sent",
   "_startup_2026-07-13": "sent",
   "_startup_2026-07-14": "sent",
-  "sma_AMZN_1h": "2026-07-14"
+  "sma_AMZN_1h": "2026-07-14",
+  "_startup_2026-07-15": "sent"
 }
