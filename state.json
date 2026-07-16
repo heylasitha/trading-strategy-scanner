@@ -246,14 +246,15 @@
   "_startup_2026-07-09": "sent",
   "sma_AAPL_1h": "2026-07-15",
   "sma_AAPL_2h": "2026-07-15",
-  "sma_META_1h": "2026-07-15",
+  "sma_META_1h": "2026-07-16",
   "_startup_2026-07-10": "sent",
   "_startup_2026-07-11": "sent",
   "_startup_2026-07-12": "sent",
   "_startup_2026-07-13": "sent",
   "_startup_2026-07-14": "sent",
-  "sma_AMZN_1h": "2026-07-15",
+  "sma_AMZN_1h": "2026-07-16",
   "_startup_2026-07-15": "sent",
-  "sma_META_2h": "2026-07-15",
-  "_startup_2026-07-16": "sent"
+  "sma_META_2h": "2026-07-16",
+  "_startup_2026-07-16": "sent",
+  "sma_AVGO_1h": "2026-07-16"
 }
