@@ -216,7 +216,7 @@
   "sma_MRVL_1h": "2026-06-19",
   "sma_TSM_1h": "2026-07-06",
   "_startup_2026-06-17": "sent",
-  "sma_BTC-USD_2h": "2026-07-19",
+  "sma_BTC-USD_2h": "2026-07-20",
   "_startup_2026-06-18": "sent",
   "sma_AMD_1h": "2026-07-14",
   "sma_AMD_2h": "2026-07-13",
@@ -261,5 +261,6 @@
   "_startup_2026-07-17": "sent",
   "sma_CRM_1h": "2026-07-17",
   "_startup_2026-07-18": "sent",
-  "_startup_2026-07-19": "sent"
+  "_startup_2026-07-19": "sent",
+  "_startup_2026-07-20": "sent"
 }
