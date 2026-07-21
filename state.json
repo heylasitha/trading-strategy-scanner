@@ -207,9 +207,9 @@
   "_startup_2026-06-10": "sent",
   "_startup_2026-06-11": "sent",
   "_startup_2026-06-12": "sent",
-  "sma_BTC-USD_1h": "2026-07-20",
+  "sma_BTC-USD_1h": "2026-07-21",
   "_startup_2026-06-13": "sent",
-  "sma_ETH-USD_1h": "2026-07-20",
+  "sma_ETH-USD_1h": "2026-07-21",
   "_startup_2026-06-14": "sent",
   "_startup_2026-06-15": "sent",
   "_startup_2026-06-16": "sent",
@@ -223,7 +223,7 @@
   "_startup_2026-06-19": "sent",
   "_startup_2026-06-20": "sent",
   "_startup_2026-06-21": "sent",
-  "sma_ETH-USD_2h": "2026-07-20",
+  "sma_ETH-USD_2h": "2026-07-21",
   "_startup_2026-06-22": "sent",
   "sma_TSM_2h": "2026-07-02",
   "_startup_2026-06-23": "sent",
@@ -263,5 +263,6 @@
   "_startup_2026-07-18": "sent",
   "_startup_2026-07-19": "sent",
   "_startup_2026-07-20": "sent",
-  "sma_MSFT_1h": "2026-07-20"
+  "sma_MSFT_1h": "2026-07-20",
+  "_startup_2026-07-21": "sent"
 }
