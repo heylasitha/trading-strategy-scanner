@@ -104,6 +104,38 @@ def _is_higher_tf_bullish(tf_data: dict) -> bool:
     return not checked        # no data = don't block; all checked = bearish = block
 
 
+# ── SPY market trend check ───────────────────────────────────────────────────
+
+_spy_trend_cache: dict = {"date": None, "bullish": None}
+
+def _is_spy_bullish() -> bool:
+    """
+    Returns True if SPY is in an uptrend: close > SMA50 AND SMA50 rising.
+    Cached once per day to avoid repeated downloads.
+    """
+    today = datetime.now(timezone.utc).date()
+    if _spy_trend_cache["date"] == today and _spy_trend_cache["bullish"] is not None:
+        return _spy_trend_cache["bullish"]
+    try:
+        import yfinance as yf
+        spy = yf.Ticker("SPY").history(period="6mo", interval="1d", auto_adjust=True)
+        if spy is None or len(spy) < 52:
+            return True  # can't check — don't block
+        spy.columns = [c.lower() for c in spy.columns]
+        sma50 = spy["close"].rolling(50).mean()
+        last_close = float(spy["close"].iloc[-1])
+        last_sma50 = float(sma50.iloc[-1])
+        sma50_5ago = float(sma50.iloc[-6])
+        bullish = last_close > last_sma50 and last_sma50 > sma50_5ago
+        _spy_trend_cache["date"]    = today
+        _spy_trend_cache["bullish"] = bullish
+        log.info(f"SPY trend: {'BULLISH' if bullish else 'BEARISH'} (close={last_close:.2f} sma50={last_sma50:.2f})")
+        return bullish
+    except Exception as e:
+        log.warning(f"SPY trend check failed: {e}")
+        return True  # fail open — don't block alerts
+
+
 # ── Market hours ──────────────────────────────────────────────────────────────
 
 def _is_stock_market_open() -> bool:
@@ -189,9 +221,9 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
 
             # SHORT strategies disabled — validated 49.4% WR vs 83.3% for LONG 1H/2H/4H
 
-        # ── Pre-Golden Cross Alert — all timeframes ──────────────────────────
+        # ── Pre-Golden Cross Alert — all timeframes, SPY must be bullish ───────
         pre_key = (symbol, f"pre_gc_{tf_label}", datetime.now(timezone.utc).date())
-        if pre_key not in _alerted:
+        if pre_key not in _alerted and _is_spy_bullish():
             pre = detect_pre_golden_cross(df, symbol, tf_label)
             if pre is not None:
                 msg = (
