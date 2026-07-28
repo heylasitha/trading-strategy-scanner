@@ -104,6 +104,57 @@ def detect_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | 
     }
 
 
+# ── Pre-Golden Cross Alert ────────────────────────────────────────────────────
+
+def detect_pre_golden_cross(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    Alert when SMA20 is approaching SMA200 from below and about to cross.
+
+    Conditions:
+      1. SMA20 < SMA200 (not yet crossed)
+      2. Gap between SMA20 and SMA200 <= 2% (imminent cross)
+      3. SMA20 slope is rising (last 5 bars trending up)
+      4. Price > SMA20 (buyers in control)
+    """
+    df = add_all_indicators(df)
+    df.dropna(subset=["sma20", "sma200"], inplace=True)
+
+    if len(df) < 10:
+        return None
+
+    last = df.iloc[-1]
+
+    # Condition 1: SMA20 still below SMA200
+    if last["sma20"] >= last["sma200"]:
+        return None
+
+    # Condition 2: gap <= 2%
+    gap_pct = (last["sma200"] - last["sma20"]) / last["sma200"] * 100
+    if gap_pct > 2.0:
+        return None
+
+    # Condition 3: SMA20 slope rising over last 5 bars
+    sma20_5bars_ago = df.iloc[-6]["sma20"]
+    if last["sma20"] <= sma20_5bars_ago:
+        return None
+
+    # Condition 4: Price above SMA20
+    if last["close"] <= last["sma20"]:
+        return None
+
+    return {
+        "symbol":    symbol,
+        "timeframe": tf_label,
+        "strategy":  "PRE GOLDEN CROSS",
+        "strength":  "WATCH",
+        "pattern":   f"SMA20 approaching SMA200 ({gap_pct:.2f}% away)",
+        "sma20":     round(last["sma20"],  4),
+        "sma200":    round(last["sma200"], 4),
+        "gap_pct":   round(gap_pct, 2),
+        "close":     round(last["close"],  4),
+    }
+
+
 # ── Pattern classifier ────────────────────────────────────────────────────────
 
 def _classify_pattern(df: pd.DataFrame) -> str:

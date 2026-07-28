@@ -15,7 +15,7 @@ from config import (
     EARNINGS_BUFFER_DAYS,
 )
 from data_fetcher import fetch_all_timeframes
-from strategy import detect_signal, detect_sma_compression_breakout, detect_bearish_signal, detect_death_cross
+from strategy import detect_signal, detect_sma_compression_breakout, detect_bearish_signal, detect_death_cross, detect_avwap_reclaim, detect_pre_golden_cross
 from alerts import send_telegram_alert, send_startup_message
 from sheets_logger import log_signal
 
@@ -33,9 +33,17 @@ log = logging.getLogger(__name__)
 ET  = pytz.timezone("US/Eastern")
 SGT = pytz.timezone("Asia/Singapore")
 
+# ── AVWAP Reclaim symbol universe (backtested 18 months, 62.7% WR) ───────────
+AVWAP_SYMBOLS = [
+    "AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","AVGO","QCOM","TSM","MRVL","ASML",
+    "AMAT","LRCX","KLAC","MU","TXN","CRM","DDOG","V","JPM","GS",
+    "SPY","QQQ","SOXX","ETH-USD",
+]
+
 # ── Alert deduplication ───────────────────────────────────────────────────────
 _alerted: set[tuple] = set()
 _alerted_compression: set[tuple] = set()
+_alerted_avwap: set[tuple] = set()
 _last_clear: date | None = None
 
 # ── Signal cooldown removed 2026-06-05 ───────────────────────────────────────
@@ -72,6 +80,7 @@ def _clear_old_alerts() -> None:
     if _last_clear != today:
         _alerted.clear()
         _alerted_compression.clear()
+        _alerted_avwap.clear()
         _last_clear = today
         log.info("Alert deduplication cache cleared for new day.")
 
@@ -180,9 +189,100 @@ def scan_symbol(symbol: str, is_stock: bool) -> None:
 
             # SHORT strategies disabled — validated 49.4% WR vs 83.3% for LONG 1H/2H/4H
 
+        # ── Pre-Golden Cross Alert — all timeframes ──────────────────────────
+        pre_key = (symbol, f"pre_gc_{tf_label}", datetime.now(timezone.utc).date())
+        if pre_key not in _alerted:
+            pre = detect_pre_golden_cross(df, symbol, tf_label)
+            if pre is not None:
+                msg = (
+                    f"⚠️ INCOMING GOLDEN CROSS\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"Symbol    : {symbol}\n"
+                    f"Timeframe : {tf_label.upper()}\n"
+                    f"SMA20     : {pre['sma20']}\n"
+                    f"SMA200    : {pre['sma200']}\n"
+                    f"Gap       : {pre['gap_pct']}% away\n"
+                    f"Price     : {pre['close']}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"SMA20 rising and approaching SMA200 — cross imminent"
+                )
+                from alerts import send_telegram_message
+                send_telegram_message(msg)
+                _alerted.add(pre_key)
+                log.info(f"  PRE-GOLDEN CROSS: {symbol} {tf_label} — {pre['gap_pct']}% away")
+
         # ── SMA Compression Breakout — DISABLED ──────────────────────────────
         # Validated 35.3% WR from 250 real trades (33% at 15M, 28% at 30M, 50% at 1H)
         # Insufficient edge — removed 2026-06-05
+
+
+# ── AVWAP Reclaim scan ────────────────────────────────────────────────────────
+
+def scan_avwap_reclaim(symbol: str, is_crypto: bool) -> None:
+    """
+    AVWAP Reclaim — 4H only, fires after each 4H candle close.
+    Runs on all 24 backtested symbols regardless of market hours
+    (crypto runs 24/7, stocks checked on 4H candle close).
+    """
+    # Stocks: only scan during market hours (4H candle closes at 10, 14 ET)
+    if not is_crypto and not _is_stock_market_open():
+        return
+
+    dedup_key = (symbol, "4h", datetime.now(timezone.utc).date())
+    if dedup_key in _alerted_avwap:
+        return
+
+    try:
+        import yfinance as yf
+        import numpy as np
+
+        if is_crypto:
+            import requests as _req
+            crypto_map = {"ETH-USD": "ETHUSDT"}
+            binance_sym = crypto_map.get(symbol)
+            if not binance_sym:
+                return
+            r = _req.get("https://api.binance.us/api/v3/klines",
+                         params={"symbol": binance_sym, "interval": "4h", "limit": 300},
+                         timeout=15)
+            if r.status_code != 200:
+                return
+            raw = r.json()
+            df = pd.DataFrame(raw, columns=[
+                "open_time","open","high","low","close","volume",
+                "close_time","quote_vol","trades","taker_base","taker_quote","ignore"])
+            df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+            df = df.set_index("open_time")[["open","high","low","close","volume"]].astype(float)
+        else:
+            raw1h = yf.Ticker(symbol).history(period="2y", interval="1h", auto_adjust=True)
+            if raw1h is None or raw1h.empty:
+                return
+            raw1h.columns = [c.lower() for c in raw1h.columns]
+            raw1h = raw1h[["open","high","low","close","volume"]].astype(float)
+            if raw1h.index.tz is None:
+                raw1h.index = raw1h.index.tz_localize("UTC")
+            else:
+                raw1h.index = raw1h.index.tz_convert("UTC")
+            df = raw1h.resample("4h").agg(
+                {"open":"first","high":"max","low":"min","close":"last","volume":"sum"}
+            ).dropna()
+
+        if df is None or len(df) < 50:
+            return
+
+        df = df[~df.index.duplicated()].sort_index()
+        signal = detect_avwap_reclaim(df, symbol, "4h")
+        if signal is None:
+            return
+
+        log.info(f"  AVWAP RECLAIM: {symbol} 4H | {signal['strength']} | AVWAP={signal['avwap']:.2f}")
+        sent = send_telegram_alert(signal)
+        if sent:
+            _alerted_avwap.add(dedup_key)
+            log_signal(signal)
+
+    except Exception as e:
+        log.error(f"AVWAP scan error {symbol}: {e}")
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -216,6 +316,14 @@ def run_scanner() -> None:
                 scan_symbol(symbol, is_stock=False)
             except Exception as e:
                 log.error(f"Error scanning {symbol}: {e}")
+
+        # ── AVWAP Reclaim — 4H, 24 symbols ───────────────────────────────────
+        crypto_avwap = {"ETH-USD"}
+        for symbol in AVWAP_SYMBOLS:
+            try:
+                scan_avwap_reclaim(symbol, is_crypto=(symbol in crypto_avwap))
+            except Exception as e:
+                log.error(f"AVWAP scan error {symbol}: {e}")
 
         log.info(f"--- Scan #{scan_number} complete. Next scan in {SCAN_INTERVAL_SECONDS}s ---\n")
         time.sleep(SCAN_INTERVAL_SECONDS)
