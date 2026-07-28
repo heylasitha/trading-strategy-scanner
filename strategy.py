@@ -12,6 +12,14 @@ from config import (
 )
 from indicators import add_all_indicators, add_all_indicators_with_vwap
 
+# ── AVWAP Reclaim constants ───────────────────────────────────────────────────
+_AVWAP_SWING_LOOKBACK  = 15
+_AVWAP_SWING_CONFIRM   = 3
+_AVWAP_MIN_BARS_BELOW  = 2
+_AVWAP_MAX_ATR_PCT     = 4.0
+_AVWAP_MAX_RISK_PCT    = 6.0
+_AVWAP_MIN_VOL_RATIO   = 1.3
+
 _ET = pytz.timezone("US/Eastern")
 
 SHORT_ADX_THRESHOLD = 30   # stricter for shorts (stocks trend up long-term)
@@ -213,6 +221,10 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
       6. ADX > ADX_THRESHOLD
       7. Higher-timeframe alignment (SMA20 > SMA50 confirmed on last 3 bars)
     """
+    # ── Fix 1: 1H/2H only — prevents same signal firing on 5 timeframes ─────
+    if tf_label not in {"1h", "2h"}:
+        return None
+
     df = add_all_indicators(df)
     df.dropna(subset=["sma20", "sma50", "sma200", "rsi", "adx", "volume_ratio"], inplace=True)
 
@@ -230,8 +242,12 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
     if last["close"] <= last["sma20"]:
         return None
 
-    # ── Condition 3: RSI above 45 — not in oversold/weak zone ───────────────
-    if pd.isna(last["rsi"]) or last["rsi"] <= 45:
+    # ── Condition 3: RSI 45–72 — not oversold/weak, not overbought ──────────
+    if pd.isna(last["rsi"]) or not (45 < last["rsi"] <= 72):
+        return None
+
+    # ── Fix 2: Volume filter — only fire on confirmed volume spike ───────────
+    if pd.isna(last["volume_ratio"]) or last["volume_ratio"] < 1.1:
         return None
 
     # ── Condition 4: RSI rising ───────────────────────────────────────────────
@@ -253,6 +269,10 @@ def detect_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
     # ── All conditions passed — build signal dict ─────────────────────────────
     levels = _calculate_levels(df)
     if not levels:
+        return None
+
+    # ── Fix 3: Max stop 8% — reject wide-stop signals ────────────────────────
+    if levels.get("stop_pct", 999) > 8.0:
         return None
 
     pattern  = _classify_pattern(df)
@@ -618,6 +638,9 @@ def detect_bearish_signal(df: pd.DataFrame, symbol: str, tf_label: str) -> dict 
       6. ADX > 30 (stricter — stocks trend up long-term)
       7. Consistent bearish alignment over last 3 bars
     """
+    if tf_label not in {"1h", "2h"}:
+        return None
+
     df = add_all_indicators(df)
     df.dropna(subset=["sma20", "sma50", "sma200", "rsi", "adx", "volume_ratio"], inplace=True)
 
@@ -1269,4 +1292,162 @@ def detect_sma_compression_breakout(df: pd.DataFrame, symbol: str, tf_label: str
         "vol_contracting":  vol_contracting,
         "shakeout":         shakeout,
         "close":            round(entry, 6),
+    }
+
+
+# ── AVWAP Reclaim Strategy ────────────────────────────────────────────────────
+
+def _avwap_at(df: pd.DataFrame, anchor_i: int, target_i: int) -> float:
+    seg = df.iloc[anchor_i:target_i + 1]
+    tp  = (seg["high"] + seg["low"] + seg["close"]) / 3
+    cv  = seg["volume"].cumsum()
+    ctv = (tp * seg["volume"]).cumsum()
+    v   = float(cv.iloc[-1])
+    return float(ctv.iloc[-1] / v) if v > 0 else float("nan")
+
+
+def _find_swing_low(df: pd.DataFrame, i: int) -> int | None:
+    for j in range(i - _AVWAP_SWING_CONFIRM, max(_AVWAP_SWING_LOOKBACK, i - 80), -1):
+        wl = float(df["low"].iloc[j - _AVWAP_SWING_LOOKBACK : j + 1].min())
+        bl = float(df.iloc[j]["low"])
+        if abs(bl - wl) > 0.002 * bl:
+            continue
+        return j
+    return None
+
+
+def detect_avwap_reclaim(df: pd.DataFrame, symbol: str, tf_label: str) -> dict | None:
+    """
+    AVWAP Reclaim — 4H only.
+    Conditions:
+      1. SMA20 > SMA50 > SMA200 (uptrend)
+      2. ATR% < 4% (not high-beta whipsaw)
+      3. Volume >= 1.3× 20-bar average
+      4. Found swing low anchor within last 80 bars
+      5. Previous bar closed BELOW Anchored VWAP
+      6. Current bar closes ABOVE Anchored VWAP (reclaim)
+      7. Current candle is bullish (close > open)
+      8. At least 2 consecutive bars below AVWAP before reclaim
+      9. Current price above swing low
+     10. Stop (candle low × 0.998) risk <= 6% of entry
+    """
+    if len(df) < _AVWAP_SWING_LOOKBACK + _AVWAP_SWING_CONFIRM + 12:
+        return None
+
+    df = df.copy()
+    # Ensure indicators
+    for col in ["sma20", "sma50", "sma200"]:
+        if col not in df.columns:
+            df["sma20"]  = df["close"].rolling(20).mean()
+            df["sma50"]  = df["close"].rolling(50).mean()
+            df["sma200"] = df["close"].rolling(200).mean()
+            break
+
+    if "vol20" not in df.columns:
+        df["vol20"] = df["volume"].rolling(20).mean()
+    df["vol_ratio"] = df["volume"] / df["vol20"].replace(0, float("nan"))
+
+    if "atr" not in df.columns:
+        pc  = df["close"].shift(1)
+        tr  = pd.concat([df["high"] - df["low"],
+                         (df["high"] - pc).abs(),
+                         (df["low"]  - pc).abs()], axis=1).max(axis=1)
+        df["atr"] = tr.rolling(14).mean()
+    df["atr_pct"] = df["atr"] / df["close"] * 100
+
+    df.dropna(subset=["sma20", "sma50", "sma200", "atr_pct", "vol_ratio"], inplace=True)
+    if len(df) < 10:
+        return None
+
+    i    = len(df) - 1
+    last = df.iloc[i]
+    prev = df.iloc[i - 1]
+
+    # 1. Uptrend
+    if not (last["sma20"] > last["sma50"] > last["sma200"]):
+        return None
+
+    # 2. ATR filter
+    if float(last["atr_pct"]) > _AVWAP_MAX_ATR_PCT:
+        return None
+
+    # 3. Volume
+    if pd.isna(last["vol_ratio"]) or float(last["vol_ratio"]) < _AVWAP_MIN_VOL_RATIO:
+        return None
+
+    # 4. Swing low anchor
+    anchor_i = _find_swing_low(df, i)
+    if anchor_i is None:
+        return None
+    swing_low = float(df.iloc[anchor_i]["low"])
+
+    # 5-6. AVWAP reclaim
+    av_prev = _avwap_at(df, anchor_i, i - 1)
+    av_now  = _avwap_at(df, anchor_i, i)
+    import math
+    if math.isnan(av_prev) or math.isnan(av_now):
+        return None
+    if float(prev["close"]) >= av_prev:
+        return None
+    if float(last["close"]) <= av_now:
+        return None
+
+    # 7. Bullish candle
+    if float(last["close"]) <= float(last["open"]):
+        return None
+
+    # 8. Min bars below AVWAP
+    below = 0
+    for j in range(i - 1, anchor_i, -1):
+        av_j = _avwap_at(df, anchor_i, j)
+        if float(df.iloc[j]["close"]) < av_j:
+            below += 1
+        else:
+            break
+    if below < _AVWAP_MIN_BARS_BELOW:
+        return None
+
+    # 9. Price above swing low
+    if float(last["close"]) <= swing_low:
+        return None
+
+    # 10. Stop / risk
+    entry    = float(last["close"])
+    stop     = float(last["low"]) * 0.998
+    risk     = entry - stop
+    if risk <= 0:
+        return None
+    risk_pct = risk / entry * 100
+    if risk_pct > _AVWAP_MAX_RISK_PCT:
+        return None
+
+    target     = entry + risk * MIN_RR
+    rr         = round((target - entry) / risk, 2)
+    stop_pct   = round(risk_pct, 2)
+    target_pct = round((target - entry) / entry * 100, 2)
+
+    vol = float(last["vol_ratio"])
+    strength = "STRONG" if vol >= 2.0 else ("MODERATE" if vol >= 1.5 else "WATCH")
+
+    return {
+        "symbol":     symbol,
+        "timeframe":  tf_label,
+        "strategy":   "AVWAP RECLAIM",
+        "strength":   strength,
+        "pattern":    "Anchored VWAP Reclaim",
+        "entry":      round(entry,    6),
+        "stop":       round(stop,     6),
+        "target":     round(target,   6),
+        "rr":         rr,
+        "stop_pct":   stop_pct,
+        "target_pct": target_pct,
+        "avwap":      round(av_now,   6),
+        "swing_low":  round(swing_low, 6),
+        "bars_below": below,
+        "atr_pct":    round(float(last["atr_pct"]), 2),
+        "vol_ratio":  round(vol, 2),
+        "sma20":      round(float(last["sma20"]),  4),
+        "sma50":      round(float(last["sma50"]),  4),
+        "sma200":     round(float(last["sma200"]), 4),
+        "close":      round(entry, 6),
     }
