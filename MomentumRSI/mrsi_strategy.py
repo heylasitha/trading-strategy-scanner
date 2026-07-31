@@ -49,16 +49,21 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+CRYPTO_SYMBOLS = {"BTC-USD", "ETH-USD"}
+
+
 def detect(df: pd.DataFrame, symbol: str, vix_rank: float) -> dict | None:
     """
     Returns signal dict if all conditions pass, else None.
     Conditions:
-      1. VIX Rank <= 70  (calm market)
+      1. VIX Rank <= 70  (calm market — skipped for crypto)
       2. Price > SMA200  (long-term uptrend)
       3. RSI(14) < 35    (short-term pullback)
     """
-    # Condition 1: VIX filter
-    if vix_rank is None or vix_rank > VIX_RANK_MAX:
+    is_crypto = symbol in CRYPTO_SYMBOLS
+
+    # Condition 1: VIX filter (skip for crypto — trades 24/7)
+    if not is_crypto and (vix_rank is None or vix_rank > VIX_RANK_MAX):
         return None
 
     df = add_indicators(df).dropna(subset=["sma200", "rsi"])

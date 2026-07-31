@@ -6,6 +6,7 @@ SYMBOLS = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
     "AMD",  "AVGO", "TSM",  "MRVL",  "ASML", "QCOM",
     "PLTR", "ORCL", "NFLX", "NOW",   "CRM",  "JPM",  "GS",
+    "BTC-USD", "ETH-USD",
 ]
 
 # ── Strategy parameters ───────────────────────────────────────────────────────
