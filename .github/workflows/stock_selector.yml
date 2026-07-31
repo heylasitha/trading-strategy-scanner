@@ -2,8 +2,8 @@ name: Dynamic Stock Selector
 
 on:
   schedule:
-    - cron: '0 22 */10 * *'   # Every 10 days at 10 PM UTC
-  workflow_dispatch:            # Manual trigger anytime
+    - cron: '0 20 */10 * 1-5'   # Every 10 days at 8 PM UTC on weekdays
+  workflow_dispatch:              # Manual trigger anytime from GitHub UI
 
 permissions:
   contents: write
@@ -11,7 +11,7 @@ permissions:
 jobs:
   select:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repo
@@ -28,18 +28,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Stock Selector
+      - name: Run Dynamic Stock Selector
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN:      ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:        ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALPACA_API_KEY:          ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY:       ${{ secrets.ALPACA_SECRET_KEY }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: |
           cd MomentumRSI
-          python stock_selector.py
+          python dynamic_scanner.py
 
       - name: Commit updated stock list
         run: |
-          git config user.name  "Stock Selector Bot"
+          git config user.name  "Dynamic Stock Selector"
           git config user.email "bot@trading-strategy"
-          git add MomentumRSI/mrsi_config.py
-          git diff --cached --quiet || git commit -m "chore: auto-update stock list [skip ci]"
+          git add MomentumRSI/mrsi_config.py MomentumRSI/selector_state.json || true
+          git diff --cached --quiet || git commit -m "chore: auto-update stock list — best WR from S&P500 [skip ci]"
           git push
