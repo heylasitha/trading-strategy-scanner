@@ -3,20 +3,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # ── Symbols ───────────────────────────────────────────────────────────────────
 SYMBOLS = [
-    # Magnificent 7 (MSFT removed — 25% WR)
     "AAPL", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-    # Semiconductors
-    "AMD",  "AVGO", "TSM",  "MRVL",  "ASML", "QCOM", "MU", "INTC", "AMAT", "TXN", "ADI",
-    # Tech / Software
-    "PLTR", "ORCL", "NFLX", "NOW",   "CRM",  "NET",  "CRWD", "SNOW", "SHOP",
-    # Finance / Payments
-    "GS",   "V",    "BAC",
-    # Consumer / Other
-    "WMT",  "LLY",  "UBER",
-    # Crypto exchange
-    "COIN",
-    # Crypto
-    "BTC-USD", "ETH-USD",
+    "BTC-USD", "ETH-USD", "ENPH", "MU", "TER", "MRVL",
+    "ON",
 ]
 
 # ── Strategy parameters ───────────────────────────────────────────────────────
