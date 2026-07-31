@@ -3,9 +3,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # ── Symbols ───────────────────────────────────────────────────────────────────
 SYMBOLS = [
+    # Magnificent 7
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-    "AMD",  "AVGO", "TSM",  "MRVL",  "ASML", "QCOM",
-    "PLTR", "ORCL", "NFLX", "NOW",   "CRM",  "JPM",  "GS",
+    # Semiconductors
+    "AMD",  "AVGO", "TSM",  "MRVL",  "ASML", "QCOM", "MU", "INTC", "AMAT", "TXN", "ADI",
+    # Tech / Software
+    "PLTR", "ORCL", "NFLX", "NOW",   "CRM",  "NET",  "CRWD", "SNOW", "SHOP",
+    # Finance / Payments
+    "JPM",  "GS",   "V",    "BAC",
+    # Consumer / Other
+    "WMT",  "LLY",  "UBER",
+    # Crypto exchange
+    "COIN",
+    # Crypto
     "BTC-USD", "ETH-USD",
 ]
 
