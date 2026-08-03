@@ -18,6 +18,7 @@ from alerts import send_telegram_alert
 from sheets_logger import log_signal
 import requests as _req
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from alpaca_trader import place_buy
 
 def send_telegram_message(msg: str) -> None:
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -105,6 +106,16 @@ def run_scan() -> None:
                 f"Backtest: 75% WR | Avg hold 5 days"
             )
             send_telegram_message(msg)
+
+            # Auto-execute on Alpaca paper account
+            place_buy(
+                symbol=symbol,
+                entry=signal["entry"],
+                target=signal["target"],
+                rsi=signal["rsi"],
+                vix_rank=signal["vix_rank"] or 0,
+            )
+
             log_signal({**signal, "timeframe": "1D", "strength": "MODERATE",
                         "pattern": "RSI Pullback in Uptrend",
                         "stop": round(signal["entry"] * 0.94, 4),

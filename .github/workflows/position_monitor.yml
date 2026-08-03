@@ -1,0 +1,32 @@
+name: Position Monitor (Alpaca Paper)
+
+on:
+  schedule:
+    - cron: '30 21 * * 1-5'   # 9:30 PM UTC = 5:30 PM ET — after market close daily
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Monitor and close positions
+        env:
+          TELEGRAM_BOT_TOKEN:      ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:        ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALPACA_API_KEY:          ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY:       ${{ secrets.ALPACA_SECRET_KEY }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: |
+          cd MomentumRSI
+          python alpaca_trader.py
