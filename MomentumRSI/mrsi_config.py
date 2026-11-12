@@ -4,8 +4,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # ── Symbols ───────────────────────────────────────────────────────────────────
 SYMBOLS = [
     "AAPL", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-    "BTC-USD", "ETH-USD", "MDB", "ON", "QCOM", "TER",
-    "AMAT", "LRCX", "TXN", "ARM", "INTC",
+    "BTC-USD", "ETH-USD", "CRWD", "EOG", "MDB", "AMD",
+    "INTC", "ASML", "DDOG", "HOOD", "ARM",
 ]
 
 # ── Strategy parameters ───────────────────────────────────────────────────────
